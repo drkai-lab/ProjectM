@@ -74,7 +74,7 @@
 </div>
 {% endif %}
 
-<a href="/logout" class="btn btn-block" style="margin-top:8px">{{ t.logout|default('ログアウト') }}</a>
+<form method="post" action="/logout" class="csrf-form"><button type="submit" class="btn btn-block" style="margin-top:8px">{{ t.logout|default('ログアウト') }}</button></form>
 {% endblock %}
 {% block scripts %}
 <script>

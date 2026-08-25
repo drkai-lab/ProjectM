@@ -8,6 +8,7 @@ import secrets
 import httpx
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from jose import jwt
+from sqlalchemy import update
 
 from . import config
 from .models import MagicToken, User
@@ -49,9 +50,14 @@ def verify_magic_token(token: str, db):
     except (BadSignature, SignatureExpired):
         return None
     rec = db.query(MagicToken).filter(MagicToken.jti == data["jti"]).first()
-    if not rec or rec.used:
+    if not rec or rec.used or rec.email != data.get("email", "").lower():
         return None
-    rec.used = True
+    result = db.execute(update(MagicToken).where(
+        MagicToken.jti == data["jti"], MagicToken.used.is_(False)
+    ).values(used=True))
+    if result.rowcount != 1:
+        db.rollback()
+        return None
     db.commit()
     return data["email"]
 

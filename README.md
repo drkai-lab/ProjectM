@@ -1,53 +1,131 @@
-# ProjectW — MyGov Monitor Dashboard
+# Project W
 
-マレーシア官公庁サイト(デフォルト100件)を監視し、キーワードヒット・更新・失敗を Telegram 通知する FastAPI アプリ。Web ダッシュボード(OneUI 風 PWA)からサイト・キーワード・スケジュール・ユーザーを管理できる。
+マレーシアの政府機関や関連機関のウェブサイトを定期的に見回り、ページの更新や、指定したキーワードの登場を知らせるための小さな監視ダッシュボードです。
 
-## 技術スタック
+## 何ができるか
 
-- **Backend**: FastAPI + Uvicorn/Gunicorn
-- **DB**: SQLite (SQLAlchemy 2.0)
-- **認証**: マジックリンク(itsdangerous 署名 + Resend HTTP API)+ JWT Cookie セッション。パスワードは stdlib `hashlib.scrypt`(bcrypt 不要)
-- **スケジューラ**: APScheduler(interval / daily / cron、1日最大回数、TZ 指定)
-- **スクレイパー**: curl_cffi(あれば)→ httpx フォールバック
-- **UI**: Jinja2 + OneUI 風 CSS、PWA(manifest + Service Worker)
-- **パッケージ管理**: uv のみ(pip 不使用)
+- 登録したウェブサイトを自動で定期チェック
+- ページの内容が前回から変わったかを確認
+- 「申請」「パス」「料金」など、指定した言葉が出たページを記録
+- 更新やキーワードのヒットをTelegramへ通知
+- ブラウザから監視先とキーワードを追加・削除・一時停止
+- 次回のチェック時刻や、過去のチェック結果をダッシュボードで確認
+- マジックリンクまたはパスワードでログイン
+- 日本語、英語、中国語、マレー語、韓国語の画面表示に対応
 
-## 権限モデル
+初回起動時には、マレーシアの官公庁・公共機関を中心とした監視先と、いくつかの基本キーワードが自動登録されます。必要に応じて、あとから自由に変更できます。
 
-| ロール | 権限 |
-|---|---|
-| admin | 全操作 + ユーザー管理(招待/凍結解除/ロール/情報変更) |
-| editor | サイト・キーワード編集、手動スキャン、スケジュール変更 |
-| viewer | 閲覧のみ |
+## 画面の見方
 
-スーパーユーザー(admin)は初回起動時に `.env` の `PW_SUPERUSER_EMAIL` / `PW_SUPERUSER_PASSWORD` から自動作成される。
+### ダッシュボード
+
+登録サイト数、有効になっているサイト数、キーワード数、最近のチェック結果、次回チェック時刻をまとめて表示します。
+
+### サイト
+
+監視するURLを管理します。サイトごとに表示名、アクセス時のブラウザ設定、有効・無効を設定できます。
+
+### 設定
+
+チェックの間隔や実行時刻、タイムゾーンを変更できます。管理者はユーザーの追加、権限変更、アカウント凍結も行えます。
+
+## 権限
+
+- **管理者**: すべての設定とユーザー管理ができます
+- **編集者**: 監視サイト、キーワード、スケジュールを変更できます
+- **閲覧者**: 結果の確認が中心です
+
+## 動作の流れ
+
+1. Project Wが登録済みの有効なサイトへアクセスします。
+2. ページの文章を読み取り、前回の内容と比べます。
+3. 内容が変わっていれば、登録キーワードを探します。
+4. キーワードが見つかったページと短い抜粋を履歴へ保存します。
+5. 設定されていれば、結果をTelegramへ送ります。
+
+サイトへのアクセスに失敗した場合も、失敗したURLと理由を結果に残します。アクセス先が大きすぎる場合や、画像・ファイルなど文章ではないコンテンツは対象外です。
 
 ## セットアップ
 
+### 必要なもの
+
+- Python 3.11以上
+- `uv`
+- Telegram通知を使う場合は、Telegram Botのトークンと通知先チャットID
+- メール形式のマジックリンクを使う場合は、ResendのAPIキー
+
+### インストール
+
 ```bash
 uv sync
-cp .env.example .env   # 値を編集(SECRET_KEY, Resend キー等)
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## 環境変数(.env)
+### 環境変数
 
-| 変数 | 説明 |
-|---|---|
-| PW_SECRET_KEY | 署名・JWT 用シークレット |
-| PW_SUPERUSER_EMAIL / PW_SUPERUSER_PASSWORD | 初期 admin |
-| RESEND_API_KEY | Resend API キー(未設定時はコンソールにリンク出力) |
-| PW_PUBLIC_URL | 公開 URL(マジックリンク生成に使用) |
-| PW_LLM_BASE_URL / PW_LLM_MODEL | LLM翻訳等を使う場合のOpenAI互換エンドポイント/モデル。デスクトップ既定値は cheaperinference + gpt-5.6-luna |
-| PW_LLM_API_KEY | LLM APIキー(秘密。ログへ出力しない) |
-| PW_TELEGRAM_TOKEN / PW_TELEGRAM_CHAT_ID | Telegram通知の接続情報(秘密。ログへ出力しない) |
-| PW_NOTIFY_LANG | Telegram通知言語(ja/en/zh/ms/ko、既定zh) |
-| PW_TZ | スケジュールのデフォルト TZ |
+秘密情報は `.env` または実行環境の環境変数に設定します。秘密情報をソースコードへ直接書かないでください。
 
-## 多言語
+```dotenv
+PW_ENV=development
+PW_SECRET_KEY=十分に長いランダムな文字列
+PW_SUPERUSER_EMAIL=管理者のメールアドレス
+PW_SUPERUSER_PASSWORD=管理者のパスワード
+PW_PUBLIC_URL=http://localhost:8000
 
-UIはブラウザ/OSの `Accept-Language` を自動判定し、対応する言語(日本語・英語・簡体中国語・マレー語・韓国語)で表示する。画面の言語セレクターで手動指定した場合は `pw_lang` Cookie が優先される。Telegram通知は `PW_NOTIFY_LANG` で固定指定する。
+# 任意: Telegram通知
+PW_TELEGRAM_TOKEN=Telegram Botのトークン
+PW_TELEGRAM_CHAT_ID=通知先のチャットID
+PW_NOTIFY_LANG=ja
 
-## デプロイ
+# 任意: マジックリンクメール
+RESEND_API_KEY=ResendのAPIキー
+PW_MAIL_FROM=ProjectW <送信元アドレス>
+```
 
-Gunicorn + Uvicorn worker + Nginx + Let's Encrypt(HTTPS)。systemd user サービスで常駐。
+本番環境では、`PW_SECRET_KEY`を32文字以上にし、`PW_COOKIE_SECURE=1`を設定してください。管理者のメールアドレスとパスワードも必須です。
+
+### 起動
+
+開発中は次のコマンドで起動できます。
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+ブラウザで `http://localhost:8000` を開いてください。
+
+## データ保存
+
+既定では、SQLiteデータベースを `data/projectw.db` に保存します。別の場所を使う場合は、次のように指定できます。
+
+```dotenv
+PW_DATA_DIR=/path/to/data
+# または
+PW_DB_URL=sqlite:////path/to/projectw.db
+```
+
+監視履歴、登録サイト、キーワード、ユーザー設定はこのデータベースに保存されます。
+
+## APIのヘルスチェック
+
+```text
+GET /api/health
+```
+
+正常に動作していれば、`ok` と次回チェック時刻が返ります。
+
+## テスト
+
+```bash
+uv run pytest
+```
+
+## 注意点
+
+- 登録するURLは、公開されているHTTPまたはHTTPSのウェブサイトに限られます。
+- 内部ネットワーク、localhost、プライベートIPアドレスへのアクセスは拒否します。
+- パスワード、署名鍵、TelegramトークンなどはGitへコミットしないでください。
+- このツールはページの変化を知らせるものです。重要な手続きや期限については、必ず公式サイトを直接確認してください。
+
+## 技術構成
+
+Project Wは、FastAPI、SQLAlchemy、SQLite、APScheduler、Jinja2を使ったサーバーアプリケーションです。スマートフォンでも使いやすいPWAとして動作し、サイト取得には通常のHTTPクライアントを使い、利用できる環境ではブラウザに近いアクセス方法も使います。

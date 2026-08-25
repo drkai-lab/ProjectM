@@ -10,6 +10,10 @@
  */
 async function api(method, url, formdata) {
   const opts = { method: method, headers: {} };
+  const csrf = document.cookie.split('; ').find(function (row) {
+    return row.startsWith('csrftoken=');
+  });
+  if (csrf) opts.headers['x-csrftoken'] = decodeURIComponent(csrf.split('=')[1]);
 
   if (formdata && String(method).toUpperCase() !== "GET") {
     const params = new URLSearchParams();
@@ -56,6 +60,20 @@ async function api(method, url, formdata) {
   return data;
 }
 
+document.addEventListener('submit', function (event) {
+  const form = event.target;
+  if (!form.matches('.csrf-form')) return;
+  event.preventDefault();
+  const csrf = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
+  fetch(form.action, {
+    method: 'POST',
+    headers: csrf ? {'x-csrftoken': decodeURIComponent(csrf.split('=')[1])} : {}
+  }).then(response => {
+    if (response.redirected) window.location.assign(response.url);
+    else if (!response.ok) throw new Error('logout failed');
+    else window.location.assign('/login');
+  }).catch(() => alert('ログアウトに失敗しました。'));
+});//
 /**
  * トースト通知を表示する。
  * @param {string} message

@@ -1,6 +1,4 @@
 """DB初期化・シード・Telegram通知."""
-import datetime as dt
-import secrets
 import os
 
 

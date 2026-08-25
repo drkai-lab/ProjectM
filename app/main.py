@@ -1,5 +1,6 @@
 """ProjectW FastAPI アプリ本体."""
 import datetime as dt
+import re
 import threading
 from urllib.parse import urlsplit
 
@@ -7,18 +8,38 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette_csrf import CSRFMiddleware
 from sqlalchemy.orm import Session as OrmSession
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from . import auth, config, db as dbmod, scheduler
 from .i18n import COOKIE_NAME as LANG_COOKIE, SUPPORTED_LANGUAGES, template_context as i18n_context
-from .models import Hit, Keyword, Run, Schedule, Site, User
+from .models import Keyword, Run, Schedule, Site, User
 from .scraper_engine import run_scan
 
 app = FastAPI(title="ProjectW")
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
+limiter = Limiter(key_func=get_remote_address, headers_enabled=True)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 COOKIE = "pw_session"
+
+# 既存OSSのCSRF middlewareを使用。状態変更APIだけを保護する。
+app.add_middleware(
+    CSRFMiddleware,
+    secret=config.SECRET_KEY,
+    required_urls=[re.compile(r"^/auth/(magic|password)$"),
+                   re.compile(r"^/api/")],
+    sensitive_cookies={COOKIE},
+    cookie_secure=config.COOKIE_SECURE,
+    cookie_httponly=False,
+    cookie_samesite="lax",
+    header_name="x-csrftoken",
+)
 def template_context(request: Request, values=None):
     values = i18n_context(request, values)
     values.setdefault("u", None)
@@ -27,6 +48,7 @@ def template_context(request: Request, values=None):
 
 @app.on_event("startup")
 def _startup():
+    config.validate_production_config()
     dbmod.init_db()
     scheduler.start()
 
@@ -96,7 +118,8 @@ def set_language(lang: str, request: Request):
 
 
 @app.post("/auth/magic")
-def request_magic(email: str = Form(...), db: OrmSession = Depends(get_db)):
+@limiter.limit("3/15minutes")
+def request_magic(request: Request, email: str = Form(...), db: OrmSession = Depends(get_db)):
     email = email.strip().lower()
     u = db.query(User).filter(User.email == email).first()
     if not u:
@@ -111,7 +134,8 @@ def request_magic(email: str = Form(...), db: OrmSession = Depends(get_db)):
 
 
 @app.post("/auth/password")
-def login_password(email: str = Form(...), password: str = Form(...),
+@limiter.limit("5/minute")
+def login_password(request: Request, email: str = Form(...), password: str = Form(...),
                    db: OrmSession = Depends(get_db)):
     email = email.strip().lower()
     u = db.query(User).filter(User.email == email).first()
@@ -123,7 +147,7 @@ def login_password(email: str = Form(...), password: str = Form(...),
     db.commit()
     resp = JSONResponse({"ok": True, "redirect": "/"})
     resp.set_cookie(COOKIE, auth.make_session_jwt(u), httponly=True,
-                    max_age=config.SESSION_TTL, samesite="lax")
+                    max_age=config.SESSION_TTL, samesite="lax", secure=config.COOKIE_SECURE)
     return resp
 
 
@@ -139,11 +163,11 @@ def verify_magic(token: str, db: OrmSession = Depends(get_db)):
     db.commit()
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie(COOKIE, auth.make_session_jwt(u), httponly=True,
-                    max_age=config.SESSION_TTL, samesite="lax")
+                    max_age=config.SESSION_TTL, samesite="lax", secure=config.COOKIE_SECURE)
     return resp
 
 
-@app.get("/logout")
+@app.post("/logout")
 def logout():
     resp = RedirectResponse("/login", status_code=302)
     resp.delete_cookie(COOKIE)
@@ -197,6 +221,10 @@ def settings_page(request: Request, db: OrmSession = Depends(get_db)):
 def add_site(url: str = Form(...), label: str = Form(""), profile: str = Form("chrome"),
              db: OrmSession = Depends(get_db), u: User = Depends(require_editor)):
     url = url.strip()
+    from .scraper_engine import validate_target_url
+    safe, reason = validate_target_url(url)
+    if not safe:
+        raise HTTPException(400, f"監視先URLを登録できません: {reason}")
     if db.query(Site).filter(Site.url == url).first():
         raise HTTPException(400, "既に登録済みのURLです")
     db.add(Site(url=url, label=label, profile=profile, enabled=True))
@@ -208,11 +236,16 @@ def add_site(url: str = Form(...), label: str = Form(""), profile: str = Form("c
 def update_site(sid: int, url: str = Form(None), label: str = Form(None),
                 profile: str = Form(None), enabled: str = Form(None),
                 db: OrmSession = Depends(get_db), u: User = Depends(require_editor)):
-    s = db.query(Site).get(sid)
+    s = db.get(Site, sid)
     if not s:
         raise HTTPException(404, "見つかりません")
     if url is not None:
-        s.url = url.strip()
+        from .scraper_engine import validate_target_url
+        url = url.strip()
+        safe, reason = validate_target_url(url)
+        if not safe:
+            raise HTTPException(400, f"監視先URLを変更できません: {reason}")
+        s.url = url
     if label is not None:
         s.label = label
     if profile is not None:
@@ -225,7 +258,7 @@ def update_site(sid: int, url: str = Form(None), label: str = Form(None),
 
 @app.delete("/api/sites/{sid}")
 def delete_site(sid: int, db: OrmSession = Depends(get_db), u: User = Depends(require_editor)):
-    s = db.query(Site).get(sid)
+    s = db.get(Site, sid)
     if s:
         db.delete(s)
         db.commit()
@@ -247,7 +280,7 @@ def add_keyword(term: str = Form(...), db: OrmSession = Depends(get_db),
 @app.delete("/api/keywords/{kid}")
 def delete_keyword(kid: int, db: OrmSession = Depends(get_db),
                    u: User = Depends(require_editor)):
-    k = db.query(Keyword).get(kid)
+    k = db.get(Keyword, kid)
     if k:
         db.delete(k)
         db.commit()
@@ -256,7 +289,8 @@ def delete_keyword(kid: int, db: OrmSession = Depends(get_db),
 
 # ---------------- 手動スキャン ----------------
 @app.post("/api/scan")
-def manual_scan(db: OrmSession = Depends(get_db), u: User = Depends(require_editor)):
+@limiter.limit("1/minute")
+def manual_scan(request: Request, db: OrmSession = Depends(get_db), u: User = Depends(require_editor)):
     def _bg():
         run_scan(dbmod.SessionLocal, trigger="manual", notify=dbmod.telegram_notify)
     threading.Thread(target=_bg, daemon=True).start()
@@ -307,7 +341,7 @@ def add_user(email: str = Form(...), name: str = Form(""), role: str = Form("vie
 def update_user(uid: int, name: str = Form(None), role: str = Form(None),
                 frozen: str = Form(None), db: OrmSession = Depends(get_db),
                 u: User = Depends(require_admin)):
-    tu = db.query(User).get(uid)
+    tu = db.get(User, uid)
     if not tu:
         raise HTTPException(404, "見つかりません")
     if tu.email == config.SUPERUSER_EMAIL.lower() and (role and role != "admin"):
@@ -326,7 +360,7 @@ def update_user(uid: int, name: str = Form(None), role: str = Form(None),
 
 @app.delete("/api/users/{uid}")
 def delete_user(uid: int, db: OrmSession = Depends(get_db), u: User = Depends(require_admin)):
-    tu = db.query(User).get(uid)
+    tu = db.get(User, uid)
     if not tu:
         raise HTTPException(404, "見つかりません")
     if tu.email == config.SUPERUSER_EMAIL.lower():
