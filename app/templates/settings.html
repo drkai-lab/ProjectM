@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ t.settings|default('設定') }} — ProjectW{% endblock %}
+{% block content %}
+{% set can_edit = u.role in ['admin','editor'] %}
+
+<div class="card">
+  <div class="card-title">{{ t.scan_schedule|default('スキャンスケジュール') }}</div>
+  <form id="schedForm">
+    <label class="field">
+      <span>実行モード</span>
+      <select name="mode" id="modeSel">
+        <option value="interval" {% if sched.mode=='interval' %}selected{% endif %}>間隔(N時間ごと)</option>
+        <option value="daily" {% if sched.mode=='daily' %}selected{% endif %}>毎日指定時刻</option>
+        <option value="cron" {% if sched.mode=='cron' %}selected{% endif %}>cron式(上級)</option>
+      </select>
+    </label>
+    <div class="mode-block" data-mode="interval">
+      <label class="field"><span>間隔(時間)</span>
+        <input type="number" name="interval_hours" min="1" max="168" value="{{ sched.interval_hours }}"></label>
+    </div>
+    <div class="mode-block" data-mode="daily">
+      <label class="field"><span>時刻(カンマ区切り 例 07:00,19:00)</span>
+        <input name="daily_times" value="{{ sched.daily_times }}" placeholder="07:00,19:00"></label>
+    </div>
+    <div class="mode-block" data-mode="cron">
+      <label class="field"><span>cron式 (分 時 日 月 曜)</span>
+        <input name="cron_expr" value="{{ sched.cron_expr }}" placeholder="0 */6 * * *"></label>
+    </div>
+    <label class="field"><span>1日の最大実行回数(0=無制限)</span>
+      <input type="number" name="max_runs_per_day" min="0" value="{{ sched.max_runs_per_day }}"></label>
+    <label class="field"><span>タイムゾーン</span>
+      <input name="timezone" value="{{ sched.timezone }}"></label>
+    <label class="list-item" style="padding:14px 0">
+      <span>{{ t.schedule_enabled|default('スケジュール有効') }}</span>
+      <span class="toggle"><input type="checkbox" name="enabled" {% if sched.enabled %}checked{% endif %}><span class="slider"></span></span>
+    </label>
+    {% if can_edit %}<button class="btn btn-primary btn-block">保存して再スケジュール</button>{% endif %}
+  </form>
+</div>
+
+{% if u.role == 'admin' %}
+<div class="card">
+  <div class="card-title">{{ t.get('user_management', 'ユーザー管理') }}</div>
+  <form id="userForm" class="inline-form" style="flex-wrap:wrap">
+    <input name="email" type="email" placeholder="メールアドレス" required style="flex:1 1 100%">
+    <input name="name" placeholder="名前(任意)" style="flex:1 1 55%">
+    <select name="role">
+      <option value="viewer">viewer</option>
+      <option value="editor">editor</option>
+      <option value="admin">admin</option>
+    </select>
+    <button class="btn btn-primary">{{ t.get('invite', '招待') }}</button>
+  </form>
+  <div class="list" id="userList">
+    {% for usr in users %}
+    <div class="list-item user-row" data-uid="{{ usr.id }}">
+      <div style="min-width:0;flex:1">
+        <div class="site-url">{{ usr.name or usr.email }}
+          {% if usr.is_frozen %}<span class="badge badge-frozen">凍結</span>{% endif %}</div>
+        <div class="site-sub">{{ usr.email }} · {{ usr.role }}</div>
+      </div>
+      <select class="user-role" {% if usr.email == 'iamworkingwell@gmail.com' %}disabled{% endif %}>
+        <option value="viewer" {% if usr.role=='viewer' %}selected{% endif %}>viewer</option>
+        <option value="editor" {% if usr.role=='editor' %}selected{% endif %}>editor</option>
+        <option value="admin" {% if usr.role=='admin' %}selected{% endif %}>admin</option>
+      </select>
+      {% if usr.email != 'iamworkingwell@gmail.com' %}
+      <button class="btn-sm user-freeze">{{ '解除' if usr.is_frozen else '凍結' }}</button>
+      <button class="chip-x user-del">×</button>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<a href="/logout" class="btn btn-block" style="margin-top:8px">{{ t.logout|default('ログアウト') }}</a>
+{% endblock %}
+{% block scripts %}
+<script>
+const modeSel = document.getElementById('modeSel');
+function syncMode() {
+  document.querySelectorAll('.mode-block').forEach(b =>
+    b.style.display = (b.dataset.mode === modeSel.value) ? 'block' : 'none');
+}
+modeSel.onchange = syncMode; syncMode();
+
+const sf = document.getElementById('schedForm');
+sf.onsubmit = async (e) => {
+  e.preventDefault();
+  const fd = new FormData(sf);
+  fd.set('enabled', sf.enabled.checked ? 'on' : 'off');
+  const r = await api('POST', '/api/schedule', fd);
+  toast('保存しました。次回: ' + (r.next_run ? r.next_run.slice(11,16) : '—'));
+};
+
+const uf = document.getElementById('userForm');
+if (uf) {
+  uf.onsubmit = async (e) => {
+    e.preventDefault();
+    const r = await api('POST', '/api/users', new FormData(uf));
+    toast(r.msg || '追加しました'); setTimeout(()=>location.reload(), 800);
+  };
+  document.querySelectorAll('.user-row').forEach(row => {
+    const uid = row.dataset.uid;
+    const rl = row.querySelector('.user-role');
+    if (rl && !rl.disabled) rl.onchange = async () => {
+      await api('PUT', '/api/users/' + uid, {role: rl.value}); toast('ロールを変更しました');
+    };
+    const fz = row.querySelector('.user-freeze');
+    if (fz) fz.onclick = async () => {
+      const now = fz.textContent === '凍結';
+      await api('PUT', '/api/users/' + uid, {frozen: now ? '1' : '0'});
+      location.reload();
+    };
+    const dl = row.querySelector('.user-del');
+    if (dl) dl.onclick = async () => {
+      if (!confirm('削除しますか?')) return;
+      await api('DELETE', '/api/users/' + uid); row.remove(); toast('削除しました');
+    };
+  });
+}
+</script>
+{% endblock %}
