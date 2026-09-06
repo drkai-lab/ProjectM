@@ -15,7 +15,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from . import auth, config, db as dbmod, scheduler
-from .i18n import COOKIE_NAME as LANG_COOKIE, SUPPORTED_LANGUAGES, template_context as i18n_context
+from .i18n import COOKIE_NAME as LANG_COOKIE, SUPPORTED_LANGUAGES, TRANSLATIONS, template_context as i18n_context
 from .models import Keyword, Run, Schedule, Site, User
 from .scraper_engine import run_scan
 
@@ -98,7 +98,18 @@ def require_editor(request: Request, db: OrmSession = Depends(get_db)):
 # ---------------- 認証 ----------------
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse(request, "login.html", template_context(request))
+    ctx = template_context(request)
+    import json as _json
+    lang = ctx.get("lang", "ja")
+    msgs = {
+        "sending": TRANSLATIONS.get(lang, {}).get("scanning_now", "送信中…"),
+        "link_sent": TRANSLATIONS.get(lang, {}).get("link_sent", "マジックリンクを送信しました"),
+        "send_failed": TRANSLATIONS.get(lang, {}).get("send_failed", "送信に失敗しました"),
+        "logged_in": TRANSLATIONS.get(lang, {}).get("updated", "ログインしました"),
+        "login_failed": TRANSLATIONS.get(lang, {}).get("invalid_credentials", "ログインに失敗しました"),
+    }
+    ctx["msgs_json"] = _json.dumps(msgs, ensure_ascii=False)
+    return templates.TemplateResponse(request, "login.html", ctx)
 
 
 @app.get("/language/{lang}")
@@ -137,15 +148,21 @@ def request_magic(request: Request, email: str = Form(...), db: OrmSession = Dep
 @limiter.limit("5/minute")
 def login_password(request: Request, email: str = Form(...), password: str = Form(...),
                    db: OrmSession = Depends(get_db)):
+    wants_html = "text/html" in request.headers.get("accept", "")
     email = email.strip().lower()
     u = db.query(User).filter(User.email == email).first()
-    if not u or not u.password_hash or not auth.verify_password(password, u.password_hash):
-        raise HTTPException(status_code=401, detail="メールまたはパスワードが違います")
-    if u.is_frozen:
-        raise HTTPException(status_code=403, detail="アカウントが凍結されています")
+    bad = (not u or not u.password_hash or not auth.verify_password(password, u.password_hash))
+    if bad or u.is_frozen:
+        if wants_html:
+            return RedirectResponse("/login?error=1", status_code=303)
+        detail = "メールまたはパスワードが違います" if bad else "アカウントが凍結されています"
+        raise HTTPException(status_code=401 if bad else 403, detail=detail)
     u.last_login = dt.datetime.now(dt.timezone.utc)
     db.commit()
-    resp = JSONResponse({"ok": True, "redirect": "/"})
+    if wants_html:
+        resp = RedirectResponse("/", status_code=303)
+    else:
+        resp = JSONResponse({"ok": True, "redirect": "/"})
     resp.set_cookie(COOKIE, auth.make_session_jwt(u), httponly=True,
                     max_age=config.SESSION_TTL, samesite="lax", secure=config.COOKIE_SECURE)
     return resp

@@ -390,19 +390,241 @@ body.login {
   font-size: 0.9rem;
   margin-bottom: 28px;
 }
-details.pw-login {
+.pw-login {
   margin-top: 22px;
   border-top: 1px solid var(--divider);
   padding-top: 18px;
 }
-details.pw-login > summary {
-  list-style: none;
-  cursor: pointer;
+.pw-login-title {
   color: var(--primary);
   font-weight: 600;
   font-size: 0.9rem;
   text-align: center;
-  user-select: none;
+  margin-bottom: 16px;
 }
-details.pw-login > summary::-webkit-details-marker { display: none; }
-details.pw-login[open] > summary { margin-bottom: 16px; }
+
+/* =========================================================================
+   Responsive & Missing Components (mobile-first, phone + desktop)
+   ========================================================================= */
+
+/* ===== Stat grid (dashboard) ===== */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.stat { text-align: center; padding: 18px 12px; }
+.stat-num {
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.stat-label {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* ===== Chips (keywords) ===== */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  border-radius: 20px;
+  padding: 6px 8px 6px 14px;
+  font-size: 0.88rem;
+}
+.chip-x {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 50%;
+}
+.chip-x:hover { background: var(--danger); color: #fff; }
+
+/* ===== Badges & small buttons ===== */
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+.badge-frozen { background: rgba(229,72,77,0.15); color: var(--danger); }
+.btn-sm {
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-sm:hover { background: var(--divider); }
+
+/* ===== Inline forms (sites/settings) ===== */
+.inline-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.inline-form input, .inline-form select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 11px 14px;
+}
+.inline-form .btn { width: auto; flex-shrink: 0; padding: 11px 20px; }
+
+/* ===== Site rows ===== */
+.site-url { font-weight: 500; overflow-wrap: anywhere; }
+.site-sub {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* ===== Language switcher ===== */
+.language-switcher {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.language-select {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border-radius: 12px;
+}
+
+/* ===== Settings field layout ===== */
+.field > span {
+  display: block;
+  margin: 0 6px 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ===== Tablet (≥600px) ===== */
+@media (min-width: 600px) {
+  .content { padding: 28px 24px 40px; }
+  .stat-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .stat-num { font-size: 2rem; }
+  .btn { width: auto; padding: 13px 32px; }
+  .btn-block, .btn.btn-block { width: 100%; }
+  .card { padding: 24px 26px; }
+}
+
+/* ===== Desktop (≥900px) ===== */
+@media (min-width: 900px) {
+  .content { max-width: 960px; padding: 36px 32px 48px; }
+  .page-title { font-size: 1.9rem; margin-bottom: 26px; }
+  .stat-num { font-size: 2.2rem; }
+
+  /* Bottom nav → side rail */
+  .bottom-nav {
+    top: var(--header-height);
+    bottom: 0;
+    left: 0;
+    right: auto;
+    width: 220px;
+    height: auto;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 2px;
+    padding: 14px 10px;
+    border-top: none;
+    border-right: 1px solid var(--divider);
+  }
+  .nav-item {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+  }
+  .nav-item.active { background: var(--surface-2); }
+  .nav-item .nav-icon { width: 22px; height: 22px; }
+  body.app {
+    padding-bottom: 40px;
+    padding-left: 220px;
+  }
+  .toast-container { bottom: 24px; }
+}
+
+/* ===== Large desktop (≥1280px) ===== */
+@media (min-width: 1280px) {
+  .content { max-width: 1080px; }
+}
+
+/* ===== Small phone adjustments (≤380px) ===== */
+@media (max-width: 380px) {
+  .stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-num { font-size: 1.35rem; }
+  .stat-label { font-size: 0.7rem; }
+  .app-title { font-size: 1.1rem; }
+  .role-chip { display: none; }
+  .language-switcher { display: none; }
+  .content { padding: 14px 12px 28px; }
+  .card { padding: 16px; border-radius: 14px; }
+  .login-card { padding: 28px 20px; }
+}
+
+/* ===== Login page fixes ===== */
+/* パスワードフォーム表示 */
+#password-area { display: block; }
+#password-area .field { margin: 12px 0; }
+#password-area input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+}
+/* 言語セレクタ（右上固定） */
+.login-card { position: relative; }
+.login-card > .language-switcher {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 2px 4px;
+}
+.login-card > .language-switcher .language-select {
+  width: auto;
+  min-width: 0;
+  padding: 6px 26px 6px 10px;
+  font-size: 0.85rem;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236a707a' stroke-width='2'%3e%3cpath d='M6 9l6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.login-card > .language-switcher .language-select:focus { outline: none; }

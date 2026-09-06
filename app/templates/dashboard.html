@@ -24,20 +24,20 @@
 
 {% if u.role in ['admin','editor'] %}
 <button class="btn btn-primary btn-block" id="scanBtn" style="margin:18px 0">
-  {{ t.scan_now|default('今すぐスキャン実行') }}
+  {{ t.scan_now_btn|default('今すぐスキャン実行') }}
 </button>
 {% endif %}
 
 {% if stats.last %}
 <div class="card">
-  <div class="card-title">{{ t.latest_scan|default('最新スキャン結果') }}</div>
+  <div class="card-title">{{ t.latest_scan_result|default('最新スキャン結果') }}</div>
   <div class="list">
     <div class="list-item"><span>状態</span><b>{{ stats.last.status }}</b></div>
     <div class="list-item"><span>対象</span><b>{{ stats.last.total }} サイト</b></div>
     <div class="list-item"><span>成功</span><b>{{ stats.last.ok }}</b></div>
     <div class="list-item"><span>更新</span><b>{{ stats.last.updated }}</b></div>
-    <div class="list-item"><span>ヒット</span><b style="color:var(--pri)">{{ stats.last.hits }}</b></div>
-    <div class="list-item"><span>失敗</span><b style="color:#e5484d">{{ stats.last.failed }}</b></div>
+    <div class="list-item"><span>{{ t.hit|default('ヒット') }}</span><b style="color:var(--primary)">{{ stats.last.hits }}</b></div>
+    <div class="list-item"><span>{{ t.fail|default('失敗') }}</span><b style="color:#e5484d">{{ stats.last.failed }}</b></div>
   </div>
 </div>
 {% endif %}
@@ -48,8 +48,8 @@
     {% for r in runs %}
     <div class="list-item">
       <span>{{ r.started_at.strftime('%m/%d %H:%M') if r.started_at else '—' }}
-        <small style="color:var(--sub)">({{ r.trigger }})</small></span>
-      <b>ヒット{{ r.hits }} / 失敗{{ r.failed }}</b>
+        <small style="color:var(--text-secondary)">({{ r.trigger }})</small></span>
+      <b>{{ t.hit|default("ヒット") }}{{ r.hits }} / {{ t.fail|default("失敗") }}{{ r.failed }}</b>
     </div>
     {% else %}
     <div class="list-item"><span>{{ t.no_scan_history|default('まだ実行履歴がありません') }}</span></div>
@@ -62,8 +62,8 @@
 const sb = document.getElementById('scanBtn');
 if (sb) sb.onclick = async () => {
   sb.disabled = true; sb.textContent = '実行中…';
-  try { const r = await api('POST', '/api/scan'); toast(r.msg || 'スキャンを開始しました'); }
-  finally { setTimeout(()=>{ sb.disabled=false; sb.textContent='今すぐスキャン実行'; }, 3000); }
+  try { const r = await api('POST', '/api/scan'); toast(r.msg || '{{ t.scan_started|default('スキャンを開始しました') }}'); }
+  finally { setTimeout(()=>{ sb.disabled=false; sb.textContent='{{ t.scan_now_btn|default('今すぐスキャン実行') }}'; }, 3000); }
 };
 </script>
 {% endblock %}

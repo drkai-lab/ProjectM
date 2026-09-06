@@ -12,41 +12,82 @@
   <div class="login-card">
     <div class="login-logo">W</div>
     <h1 class="login-title">ProjectW</h1>
-    <p class="login-subtitle">{{ t.get('login_subtitle', 'サイト監視ダッシュボードにログイン') }}</p>
+    
+    <div class="language-switcher" style="position:absolute;top:14px;right:14px;">
+        <select id="language-select" class="language-select" aria-label="言語" onchange="if(this.value) window.location.href='/language/'+this.value+'?next='+encodeURIComponent(window.location.pathname)">
+          <option value="ja" {% if request.cookies.get('lang','ja')=='ja' %}selected{% endif %}>日本語</option>
+          <option value="en" {% if request.cookies.get('lang')=='en' %}selected{% endif %}>English</option>
+          <option value="zh" {% if request.cookies.get('lang')=='zh' %}selected{% endif %}>中文</option>
+          <option value="ms" {% if request.cookies.get('lang')=='ms' %}selected{% endif %}>Bahasa Melayu</option>
+          <option value="id" {% if request.cookies.get('lang')=='id' %}selected{% endif %}>Bahasa Indonesia</option>
+          <option value="ko" {% if request.cookies.get('lang')=='ko' %}selected{% endif %}>한국어</option>
+        </select>
+      </div>
+      <p class="login-subtitle">{{ t.get('login_subtitle', 'サイト監視ダッシュボードにログイン') }}</p>
 
-    <form id="magic-form">
+    <form id="magic-form" autocomplete="off">
       <div class="field">
         <label class="field-label" for="email">{{ t.email|default('メールアドレス') }}</label>
-        <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
+        <input type="email" id="email" name="pw_magic_email" placeholder="you@example.com" required autocomplete="off">
       </div>
       <button type="submit" class="btn" id="magic-btn">{{ t.send_magic_link|default('マジックリンクを送信') }}</button>
     </form>
 
     <div id="msg" class="message" role="status" aria-live="polite"></div>
 
-    <details class="pw-login">
-      <summary>{{ t.login_with_password|default('パスワードでログイン') }}</summary>
-      <form id="password-form">
+    <div class="pw-login">
+      <div class="pw-login-title">{{ t.login_with_password|default('パスワードでログイン') }}</div>
+      <div id="password-area">
+      <form id="password-form" method="post" action="/auth/password">
         <div class="field">
           <label class="field-label" for="pw-email">{{ t.email|default('メールアドレス') }}</label>
-          <input type="email" id="pw-email" name="email" placeholder="you@example.com" required autocomplete="email">
+          <input type="email" id="pw-email" name="email" placeholder="you@example.com" required autocomplete="username" inputmode="email">
         </div>
         <div class="field">
           <label class="field-label" for="password">{{ t.password|default('パスワード') }}</label>
-          <input type="password" id="password" name="password" required autocomplete="current-password">
+          <input type="password" id="password" name="password" required autocomplete="current-password" autocapitalize="off" spellcheck="false">
         </div>
         <button type="submit" class="btn" id="pw-btn">{{ t.login|default('ログイン') }}</button>
       </form>
-    </details>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>
   <script>
+    var msgs = {{ msgs_json|default({}) }};
     var msgEl = document.getElementById("msg");
+    if (new URLSearchParams(location.search).get("error")) {
+      // ネイティブPOSTで失敗してリダイレクトされてきた場合
+      window.addEventListener("DOMContentLoaded", function () {
+        showMsg(msgs.login_failed || "メールアドレスまたはパスワードが違います。", "error");
+      });
+    }
+
     function showMsg(text, type) {
       msgEl.textContent = text || "";
       msgEl.className = "message" + (type ? " " + type : "");
     }
+
+    // パスワードログイン: fetch送信(失敗時もページ遷移せずメッセージ表示)
+    document.getElementById("password-form").addEventListener("submit", async function (e) {
+      var form = e.target;
+      var fd = new FormData(form);           // autofill済みの値もここで取得できる
+      var email = String(fd.get("email") || "").trim();
+      var password = String(fd.get("password") || "");
+      if (!email || !password) return;       // ネイティブrequiredが先に出るので通常未通過
+      e.preventDefault();
+      var btn = document.getElementById("pw-btn");
+      btn.disabled = true;
+      showMsg(msgs.sending || "認証中…", "");
+      try {
+        var data = await api("POST", "/auth/password", { email: email, password: password });
+        showMsg(msgs.logged_in || "ログインしました。", "success");
+        window.location = (data && data.redirect) || "/";
+      } catch (err) {
+        showMsg((err && err.data && err.data.detail) || msgs.login_failed || "ログインに失敗しました。", "error");
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById("magic-form").addEventListener("submit", async function (e) {
       e.preventDefault();
@@ -54,45 +95,23 @@
       var email = document.getElementById("email").value.trim();
       if (!email) return;
       btn.disabled = true;
-      showMsg("送信中…", "");
+      showMsg(msgs.sending || "送信中…", "");
       try {
         var data = await api("POST", "/auth/magic", { email: email });
         if (data && data.ok) {
-          showMsg(data.msg || "マジックリンクを送信しました。メールをご確認ください。", "success");
-          toast(data.msg || "マジックリンクを送信しました");
+          showMsg(data.msg || msgs.link_sent, "success");
+          toast(data.msg || msgs.link_sent);
         } else {
-          showMsg((data && data.msg) || "送信に失敗しました。", "error");
+          showMsg((data && data.msg) || msgs.send_failed, "error");
         }
       } catch (err) {
-        showMsg((err && err.data && err.data.msg) || "送信に失敗しました。", "error");
+        showMsg((err && err.data && err.data.msg) || msgs.send_failed, "error");
       } finally {
         btn.disabled = false;
       }
     });
 
-    document.getElementById("password-form").addEventListener("submit", async function (e) {
-      e.preventDefault();
-      var btn = document.getElementById("pw-btn");
-      var email = document.getElementById("pw-email").value.trim();
-      var password = document.getElementById("password").value;
-      if (!email || !password) return;
-      btn.disabled = true;
-      showMsg("認証中…", "");
-      try {
-        var data = await api("POST", "/auth/password", { email: email, password: password });
-        if (data && data.ok) {
-          showMsg(data.msg || "ログインしました。", "success");
-          window.location = data.redirect || "/";
-        } else {
-          showMsg((data && data.msg) || "ログインに失敗しました。", "error");
-        }
-      } catch (err) {
-        showMsg((err && err.data && err.data.msg) || "ログインに失敗しました。", "error");
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
+    
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
         navigator.serviceWorker.register("/static/sw.js").catch(function () {});
