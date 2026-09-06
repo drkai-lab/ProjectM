@@ -5,19 +5,33 @@
 
 <div class="card">
   <div class="card-title">{{ t.keywords|default('キーワード') }} ({{ kws|length }})</div>
-  <div class="chips" id="kwChips">
-    {% for k in kws %}
-    <span class="chip">{{ k.term }}
-      {% if can_edit %}<button data-kid="{{ k.id }}" class="chip-x">×</button>{% endif %}
-    </span>
-    {% endfor %}
-  </div>
   {% if can_edit %}
-  <form id="kwForm" class="inline-form">
-    <input name="term" placeholder="{{ t.add_keyword|default('キーワードを追加') }}" required>
+  <form id="kwForm" class="inline-form" style="flex-wrap:wrap">
+    <input name="term" placeholder="{{ t.add_keyword|default('キーワードを追加') }}" required style="flex:1 1 40%">
+    <input name="label" placeholder="{{ t.label_optional|default('ラベル(任意)') }}" style="flex:1 1 30%">
     <button class="btn btn-primary">{{ t.add|default('追加') }}</button>
   </form>
   {% endif %}
+  <div class="list" id="kwList">
+    {% for k in kws %}
+    <div class="list-item kw-row" data-kid="{{ k.id }}">
+      <div style="min-width:0;flex:1">
+        <div class="site-url">{{ k.term }}</div>
+        {% if k.label %}<div class="site-sub">{{ k.label }}</div>{% endif %}
+      </div>
+      {% if can_edit %}
+      <button class="chip-x kw-edit" title="✎">✎</button>
+      <label class="toggle">
+        <input type="checkbox" class="kw-toggle" {% if k.enabled %}checked{% endif %}>
+        <span class="slider"></span>
+      </label>
+      <button class="chip-x kw-del">×</button>
+      {% else %}
+      <span class="badge">{{ 'ON' if k.enabled else 'OFF' }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
 </div>
 
 <div class="card">
@@ -59,11 +73,33 @@ if (canEdit) {
   const kwForm = document.getElementById('kwForm');
   if (kwForm) kwForm.onsubmit = async (e) => {
     e.preventDefault();
-    await api('POST', '/api/keywords', {term: kwForm.term.value});
+    await api('POST', '/api/keywords', {term: kwForm.term.value, label: kwForm.label.value});
     location.reload();
   };
-  document.querySelectorAll('.chip-x[data-kid]').forEach(b => b.onclick = async () => {
-    await api('DELETE', '/api/keywords/' + b.dataset.kid); location.reload();
+  document.querySelectorAll('.kw-row').forEach(row => {
+    const kid = row.dataset.kid;
+    const tg = row.querySelector('.kw-toggle');
+    if (tg) tg.onchange = async () => {
+      await api('PUT', '/api/keywords/' + kid, {enabled: tg.checked ? '1' : '0'});
+      toast(tg.checked ? '有効化しました' : '無効化しました');
+    };
+    const ed = row.querySelector('.kw-edit');
+    if (ed) ed.onclick = async () => {
+      const term = row.querySelector('.site-url').textContent.trim();
+      const label = row.querySelector('.site-sub')
+        ? row.querySelector('.site-sub').textContent.trim() : '';
+      const t2 = prompt('用語', term);
+      if (t2 === null) return;
+      const l2 = prompt('ラベル (空欄で消去)', label);
+      if (l2 === null) return;
+      await api('PUT', '/api/keywords/' + kid, {term: t2.trim(), label: l2.trim()});
+      location.reload();
+    };
+    const del = row.querySelector('.kw-del');
+    if (del) del.onclick = async () => {
+      if (!confirm('削除しますか?')) return;
+      await api('DELETE', '/api/keywords/' + kid); row.remove(); toast('削除しました');
+    };
   });
   const siteForm = document.getElementById('siteForm');
   if (siteForm) siteForm.onsubmit = async (e) => {

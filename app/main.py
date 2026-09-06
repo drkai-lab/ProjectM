@@ -284,12 +284,31 @@ def delete_site(sid: int, db: OrmSession = Depends(get_db), u: User = Depends(re
 
 # ---------------- キーワード CRUD ----------------
 @app.post("/api/keywords")
-def add_keyword(term: str = Form(...), db: OrmSession = Depends(get_db),
+def add_keyword(term: str = Form(...), label: str = Form(""), db: OrmSession = Depends(get_db),
                 u: User = Depends(require_editor)):
     term = term.strip()
     if db.query(Keyword).filter(Keyword.term == term).first():
         raise HTTPException(400, "既に登録済みです")
-    db.add(Keyword(term=term, enabled=True))
+    db.add(Keyword(term=term, label=label.strip(), enabled=True))
+    db.commit()
+    return {"ok": True}
+
+
+@app.put("/api/keywords/{kid}")
+def update_keyword(kid: int, term: str = Form(""), label: str = Form(""), enabled: str = Form(""),
+                   db: OrmSession = Depends(get_db), u: User = Depends(require_editor)):
+    k = db.get(Keyword, kid)
+    if not k:
+        raise HTTPException(404, "キーワードがありません")
+    if term and term.strip():
+        t2 = term.strip()
+        dup = db.query(Keyword).filter(Keyword.term == t2, Keyword.id != kid).first()
+        if dup:
+            raise HTTPException(400, "既に登録済みです")
+        k.term = t2
+    k.label = label.strip()
+    if enabled in ("1", "0"):
+        k.enabled = (enabled == "1")
     db.commit()
     return {"ok": True}
 

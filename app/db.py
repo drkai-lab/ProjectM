@@ -58,6 +58,9 @@ DEFAULT_SITES = [
     "https://www.mynext.my/",
 ]
 
+# 初回セットアップ時のみ投入するシード値。
+# 対象単語の本番管理はダッシュボード「サイト」ページのキーワード欄から行う
+# (追加・編集・有効/無効・削除が可能。scraper_engine は Keyword.enabled のみ使用)。
 DEFAULT_KEYWORDS = ["Permohonan", "Pengumuman", "Ekspatriat", "Terma & Syarat",
                     "Dokumen", "Pas", "Bayaran", "Kriteria", "Undang-Undang", "Majikan"]
 
