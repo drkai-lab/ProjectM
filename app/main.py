@@ -1,5 +1,6 @@
 """ProjectW FastAPI アプリ本体."""
 import datetime as dt
+import http.cookies
 import re
 import threading
 from urllib.parse import urlsplit
@@ -8,6 +9,8 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.datastructures import MutableHeaders
+from starlette.types import Message, Receive, Scope, Send
 from starlette_csrf import CSRFMiddleware
 from sqlalchemy.orm import Session as OrmSession
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -28,6 +31,60 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 COOKIE = "pw_session"
 
+
+def _csrf_token_valid(token: str) -> bool:
+    """現在の SECRET_KEY で復号できる(=今回のデプロイが発行した)トークンか."""
+    from itsdangerous.url_safe import URLSafeSerializer
+    try:
+        URLSafeSerializer(config.SECRET_KEY, "csrftoken").loads(token)
+        return True
+    except Exception:
+        return False
+
+
+def _new_csrf_cookie() -> str:
+    """starlette_csrf と同じ形式で新しい csrftoken クッキー文字列を生成."""
+    import secrets
+    from itsdangerous.url_safe import URLSafeSerializer
+    token = URLSafeSerializer(config.SECRET_KEY, "csrftoken").dumps(secrets.token_urlsafe(128))
+    c = http.cookies.SimpleCookie()
+    c["csrftoken"] = token
+    c["csrftoken"]["path"] = "/"
+    c["csrftoken"]["secure"] = config.COOKIE_SECURE
+    c["csrftoken"]["httponly"] = False
+    c["csrftoken"]["samesite"] = "lax"
+    return c.output(header="").strip()
+
+
+class _CSRFCookieRefreshMiddleware:
+    """stale な csrftoken クッキーを自動で再発行する。
+
+    starlette_csrf はクッキーが「存在しない」場合のみ発行するため、
+    PW_SECRET_KEY 更新前の古いトークンがブラウザに残り続けるとログインが
+    403 (CSRF token verification failed) で詰む。このミドルウェアは
+    リクエストの csrftoken が現在の secret で復号できない(stale)場合に、
+    そのレスポンスへ新しいクッキーを付与して次回以降を修復する。
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        cookie = Request(scope).cookies.get("csrftoken")
+        stale = bool(cookie) and not _csrf_token_valid(cookie)
+
+        async def send_wrapper(message: Message):
+            if stale and message["type"] == "http.response.start":
+                MutableHeaders(scope=message).append(
+                    "set-cookie", _new_csrf_cookie())
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
 # 既存OSSのCSRF middlewareを使用。状態変更APIだけを保護する。
 app.add_middleware(
     CSRFMiddleware,
@@ -40,6 +97,8 @@ app.add_middleware(
     cookie_samesite="lax",
     header_name="x-csrftoken",
 )
+# CSRF の外側(後で追加した方が外側になる)。stale トークンの自動修復。
+app.add_middleware(_CSRFCookieRefreshMiddleware)
 def template_context(request: Request, values=None):
     values = i18n_context(request, values)
     values.setdefault("u", None)
@@ -144,6 +203,14 @@ def request_magic(request: Request, email: str = Form(...), db: OrmSession = Dep
     return JSONResponse({"ok": ok, "msg": "ログインリンクを送信しました" if ok else f"送信失敗: {info}"})
 
 
+def _login_error_response(request: Request, status_code: int, detail: str):
+    """ログイン失敗レスポンス。HTMLクライアント(ネイティブPOSTフォールバック)は
+    /login?error=1 へリダイレクトし、JSONクライアント(fetch)は401/403を返す。"""
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse("/login?error=1", status_code=303)
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
 @app.post("/auth/password")
 @limiter.limit("5/minute")
 def login_password(request: Request, email: str = Form(...), password: str = Form(...),
@@ -153,10 +220,8 @@ def login_password(request: Request, email: str = Form(...), password: str = For
     u = db.query(User).filter(User.email == email).first()
     bad = (not u or not u.password_hash or not auth.verify_password(password, u.password_hash))
     if bad or u.is_frozen:
-        if wants_html:
-            return RedirectResponse("/login?error=1", status_code=303)
         detail = "メールまたはパスワードが違います" if bad else "アカウントが凍結されています"
-        raise HTTPException(status_code=401 if bad else 403, detail=detail)
+        _login_error_response(request, 401 if bad else 403, detail)
     u.last_login = dt.datetime.now(dt.timezone.utc)
     db.commit()
     if wants_html:

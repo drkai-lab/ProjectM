@@ -1,4 +1,4 @@
-const CACHE_NAME = 'projectw-static-v1';
+const CACHE_NAME = 'projectw-static-v2';
 const STATIC_ASSETS = [
   '/static/manifest.json',
   '/static/icons/icon-192.png',
