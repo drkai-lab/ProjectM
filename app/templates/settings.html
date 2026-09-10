@@ -54,7 +54,7 @@
   <div class="list" id="userList">
     {% for usr in users %}
     <div class="list-item user-row" data-uid="{{ usr.id }}">
-      <div style="min-width:0;flex:1">
+      <div style="min-width:0">
         <div class="site-url">{{ usr.name or usr.email }}
           {% if usr.is_frozen %}<span class="badge badge-frozen">凍結</span>{% endif %}</div>
         <div class="site-sub">{{ usr.email }} · {{ usr.role }}</div>
