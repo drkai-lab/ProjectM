@@ -6,3 +6,6 @@ data/
 *.db
 .env
 .DS_Store
+
+# ローカル検索インデックス
+.zvec-grep/

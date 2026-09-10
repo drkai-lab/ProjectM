@@ -30,6 +30,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 COOKIE = "pw_session"
+CSRF_HEADER = "x-csrftoken"
+CSRF_COOKIE = "csrftoken"
 
 
 def _csrf_token_valid(token: str) -> bool:
@@ -48,22 +50,43 @@ def _new_csrf_cookie() -> str:
     from itsdangerous.url_safe import URLSafeSerializer
     token = URLSafeSerializer(config.SECRET_KEY, "csrftoken").dumps(secrets.token_urlsafe(128))
     c = http.cookies.SimpleCookie()
-    c["csrftoken"] = token
-    c["csrftoken"]["path"] = "/"
-    c["csrftoken"]["secure"] = config.COOKIE_SECURE
-    c["csrftoken"]["httponly"] = False
-    c["csrftoken"]["samesite"] = "lax"
+    c[CSRF_COOKIE] = token
+    c[CSRF_COOKIE]["path"] = "/"
+    c[CSRF_COOKIE]["secure"] = config.COOKIE_SECURE
+    c[CSRF_COOKIE]["httponly"] = False
+    c[CSRF_COOKIE]["samesite"] = "lax"
     return c.output(header="").strip()
 
 
-class _CSRFCookieRefreshMiddleware:
-    """stale な csrftoken クッキーを自動で再発行する。
+def _same_origin(scope: Scope) -> bool:
+    """Origin/Referer が自ホストと一致するか(どちらも無い場合は許容)。
 
-    starlette_csrf はクッキーが「存在しない」場合のみ発行するため、
-    PW_SECRET_KEY 更新前の古いトークンがブラウザに残り続けるとログインが
-    403 (CSRF token verification failed) で詰む。このミドルウェアは
-    リクエストの csrftoken が現在の secret で復号できない(stale)場合に、
-    そのレスポンスへ新しいクッキーを付与して次回以降を修復する。
+    csrftoken クッキーは SameSite=Lax なので、クロスサイトの POST では
+    ブラウザがクッキーを送らない。Origin/Referer が付いている場合のみ照合する。
+    """
+    headers = Request(scope).headers
+    origin = headers.get("origin") or headers.get("referer")
+    if not origin:
+        return True
+    try:
+        return urlsplit(origin).netloc == headers.get("host", "")
+    except ValueError:
+        return False
+
+
+class _CSRFCookieRefreshMiddleware:
+    """(1) stale な csrftoken の自動再発行 (2) ヘッダー欠落時のクッキーフォールバック。
+
+    1. starlette_csrf はクッキーが「存在しない」場合のみ発行するため、
+       PW_SECRET_KEY 更新前の古いトークンがブラウザに残り続けるとログインが
+       403 (CSRF token verification failed) で詰む。リクエストの csrftoken が
+       現在の secret で復号できない(stale)場合は、そのレスポンスへ新しい
+       クッキーを付与して次回以降を修復する。
+    2. starlette_csrf は x-csrftoken ヘッダーのみを検証するため、JS が動かない
+       ネイティブ form POST(パスワードマネージャの自動送信、JS エラー時)は
+       クッキーが有効でも一律 403 になる。ヘッダーが無い場合は csrftoken クッキー
+       の値で検証する(クロスサイト攻撃は SameSite=Lax でクッキーが送られないため
+       引き続き 403。Origin/Referer があれば同一ホストか照合する)。
     """
 
     def __init__(self, app):
@@ -73,7 +96,14 @@ class _CSRFCookieRefreshMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        cookie = Request(scope).cookies.get("csrftoken")
+        request = Request(scope)
+        cookie = request.cookies.get(CSRF_COOKIE)
+        # 注意: Request / Headers は scope["headers"] を「新しいリスト」に差し替える。
+        # そのため同一オリジン判定(内部で Request を生成)を先に済ませ、ヘッダー注入は
+        # 必ず最後に一度だけ行う。先に MutableHeaders を取得してから Request を作ると、
+        # 注入が孤児リストに落ちて CSRF middleware に届かない。
+        if cookie and not request.headers.get(CSRF_HEADER) and _same_origin(scope):
+            MutableHeaders(scope=scope)[CSRF_HEADER] = cookie
         stale = bool(cookie) and not _csrf_token_valid(cookie)
 
         async def send_wrapper(message: Message):
@@ -95,10 +125,12 @@ app.add_middleware(
     cookie_secure=config.COOKIE_SECURE,
     cookie_httponly=False,
     cookie_samesite="lax",
-    header_name="x-csrftoken",
+    header_name=CSRF_HEADER,
 )
 # CSRF の外側(後で追加した方が外側になる)。stale トークンの自動修復。
 app.add_middleware(_CSRFCookieRefreshMiddleware)
+
+
 def template_context(request: Request, values=None):
     values = i18n_context(request, values)
     values.setdefault("u", None)
@@ -158,7 +190,6 @@ def require_editor(request: Request, db: OrmSession = Depends(get_db)):
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     ctx = template_context(request)
-    import json as _json
     lang = ctx.get("lang", "ja")
     msgs = {
         "sending": TRANSLATIONS.get(lang, {}).get("scanning_now", "送信中…"),
@@ -167,7 +198,7 @@ def login_page(request: Request):
         "logged_in": TRANSLATIONS.get(lang, {}).get("updated", "ログインしました"),
         "login_failed": TRANSLATIONS.get(lang, {}).get("invalid_credentials", "ログインに失敗しました"),
     }
-    ctx["msgs_json"] = _json.dumps(msgs, ensure_ascii=False)
+    ctx["msgs"] = msgs
     return templates.TemplateResponse(request, "login.html", ctx)
 
 

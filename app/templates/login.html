@@ -54,7 +54,7 @@
 
   <script src="/static/app.js"></script>
   <script>
-    var msgs = {{ msgs_json|default({}) }};
+    var msgs = {{ msgs|tojson }};
     var msgEl = document.getElementById("msg");
     if (new URLSearchParams(location.search).get("error")) {
       // ネイティブPOSTで失敗してリダイレクトされてきた場合
