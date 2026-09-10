@@ -9,3 +9,13 @@ os.environ["PW_SUPERUSER_EMAIL"] = "admin@test.local"
 os.environ["PW_SUPERUSER_PASSWORD"] = "test-pass-123"
 os.environ["PW_ENV"] = "development"
 os.environ["PW_COOKIE_SECURE"] = "0"
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _init_test_db():
+    """全テストが順序に依存せず users テーブルを使えるようにする。"""
+    from app import db as dbmod
+
+    dbmod.init_db()

@@ -76,7 +76,6 @@ def test_cross_origin_post_still_rejected():
 
 def test_valid_login_with_native_post_sets_session():
     """ヘッダー無しのネイティブPOSTで正しい認証情報ならログインできる。"""
-    dbmod.init_db()
     db = dbmod.SessionLocal()
     email = "csrf@example.com"
     if not db.query(dbmod.User).filter_by(email=email).first():
