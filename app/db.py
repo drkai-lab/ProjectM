@@ -97,7 +97,7 @@ def _localize_notification(text: str, lang: str):
 
 def telegram_notify(text: str):
     text = _localize_notification(text, notification_language())
-    full = "[ProjectW] MyGov Monitor\n\n" + text
+    full = "[ProjectM] MyGov Monitor\n\n" + text
     for i in range(0, len(full), 4000):
         try:
             httpx.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -110,6 +110,17 @@ def telegram_notify(text: str):
 def init_db():
     Base.metadata.create_all(engine)
     db = SessionLocal()
+    # root ユーザー(スーパーユーザーより上位。PW_ROOT_EMAIL/PW_ROOT_PASSWORD で設定)
+    if config.ROOT_EMAIL:
+        ru = db.query(User).filter(User.email == config.ROOT_EMAIL.lower()).first()
+        if not ru:
+            ru = User(email=config.ROOT_EMAIL.lower(), name="Root",
+                      role="root", password_hash=auth.hash_password(config.ROOT_PASSWORD))
+            db.add(ru)
+        else:
+            ru.role = "root"
+            if not ru.password_hash and config.ROOT_PASSWORD:
+                ru.password_hash = auth.hash_password(config.ROOT_PASSWORD)
     # スーパーユーザー
     su = db.query(User).filter(User.email == config.SUPERUSER_EMAIL.lower()).first()
     if not su:

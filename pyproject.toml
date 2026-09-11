@@ -1,7 +1,7 @@
 [project]
-name = "projectw"
-version = "0.1.0"
-description = "ProjectW - MyGov Monitor dashboard (FastAPI + SQLite + PWA)"
+name = "projectm"
+version = "1.0.0"
+description = "ProjectM - MyGov Monitor dashboard with root user hierarchy, groups & search engine mode (FastAPI + SQLite + PWA)"
 requires-python = ">=3.11"
 dependencies = [
     "apscheduler>=3.11.3",
@@ -19,7 +19,8 @@ dependencies = [
     "sqlalchemy>=2.0.52",
     "starlette-csrf>=3.0.0",
     "uvicorn>=0.52.4",
-    "uvloop>=0.22.1",
+    # uvloop は Windows 非対応のため Linux/macOS のみ (本番は Linux VPS)
+    "uvloop>=0.22.1; sys_platform != 'win32'",
     "websockets>=17.0.1",
 ]
 

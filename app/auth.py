@@ -85,7 +85,7 @@ def send_magic_email(to_email: str, link: str) -> tuple[bool, str]:
         return True, "console"
     html = f"""
     <div style="font-family:sans-serif;max-width:480px;margin:auto">
-      <h2 style="color:#0381fe">ProjectW ログイン</h2>
+      <h2 style="color:#0381fe">ProjectM ログイン</h2>
       <p>下のボタンからログインしてください（15分間有効）。</p>
       <a href="{link}" style="display:inline-block;background:#0381fe;color:#fff;
          padding:14px 28px;border-radius:26px;text-decoration:none;font-weight:600">
@@ -97,7 +97,7 @@ def send_magic_email(to_email: str, link: str) -> tuple[bool, str]:
         r = httpx.post("https://api.resend.com/emails",
                        headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
                        json={"from": config.MAIL_FROM, "to": [to_email],
-                             "subject": "ProjectW ログインリンク", "html": html},
+                             "subject": "ProjectM ログインリンク", "html": html},
                        timeout=20)
         if r.status_code in (200, 201):
             return True, "sent"

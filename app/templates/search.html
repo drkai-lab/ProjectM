@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{{ t.get('related_search', '関連語検索') }} — ProjectM{% endblock %}
+{% block content %}
+{% set can_add = u.role in ['root','admin','editor'] %}
+
+<div class="card">
+  <div class="card-title">{{ t.get('related_search_title', '関連語検索 (DuckDuckGo / BraveSearch)') }}</div>
+  <p style="color:#666;font-size:13px;margin:0 0 12px">
+    {{ t.get('related_search_hint', '単語を入力すると、DuckDuckGo と BraveSearch から関連する語を検索し、監視キーワード候補として表示します。') }}
+  </p>
+  <form id="searchForm" class="inline-form" style="flex-wrap:wrap">
+    <input name="q" placeholder="{{ t.get('related_search_placeholder', '例: visa application, Pas kerja…') }}" required style="flex:1 1 100%">
+    <label class="list-item" style="padding:6px 8px;gap:6px">
+      <input type="checkbox" name="eng_ddg" checked style="width:auto"> DuckDuckGo
+    </label>
+    <label class="list-item" style="padding:6px 8px;gap:6px">
+      <input type="checkbox" name="eng_brave" checked style="width:auto"> BraveSearch
+    </label>
+    <button class="btn btn-primary">{{ t.search|default('検索') }}</button>
+  </form>
+</div>
+
+<div id="searchBusy" class="card" style="display:none">{{ t.scanning_now|default('実行中…') }}</div>
+
+{% if can_add %}
+<div class="card" id="termsCard" style="display:none">
+  <div class="card-title">{{ t.get('related_terms', '関連語候補') }}
+    <button class="btn-sm" id="bulkAddBtn" style="float:right;margin-top:-4px">{{ t.get('add_all_keywords', 'すべてキーワードに追加') }}</button>
+  </div>
+  <div id="termsList" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+</div>
+{% endif %}
+
+<div class="card" id="ddgCard" style="display:none">
+  <div class="card-title">DuckDuckGo</div>
+  <div class="list" id="ddgResults"></div>
+</div>
+
+<div class="card" id="braveCard" style="display:none">
+  <div class="card-title">BraveSearch <span id="braveNote" class="badge" style="display:none">{{ t.get('brave_not_configured', 'APIキー未設定') }}</span></div>
+  <div class="list" id="braveResults"></div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const form = document.getElementById('searchForm');
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+form.onsubmit = async (e) => {
+  e.preventDefault();
+  const fd = new FormData(form);
+  const engines = [];
+  if (form.eng_ddg.checked) engines.push('ddg');
+  if (form.eng_brave.checked) engines.push('brave');
+  fd.set('engines', engines.join(',') || 'ddg');
+
+  document.getElementById('searchBusy').style.display = 'block';
+  ['termsCard','ddgCard','braveCard'].forEach(id => document.getElementById(id).style.display = 'none');
+  try {
+    const r = await api('POST', '/api/search/related', fd);
+    renderResults(r);
+  } finally {
+    document.getElementById('searchBusy').style.display = 'none';
+  }
+};
+
+function resultHtml(item) {
+  return '<div class="list-item" style="display:block;padding:10px 0">' +
+    '<a href="' + esc(item.url) + '" target="_blank" rel="noopener" style="color:#0381fe;font-weight:600;text-decoration:none">' + esc(item.title) + '</a>' +
+    (item.snippet ? '<div class="site-sub" style="margin-top:2px">' + esc(item.snippet) + '</div>' : '') +
+    '</div>';
+}
+
+function renderResults(r) {
+  const eng = r.engines || {};
+  // DuckDuckGo
+  if (eng.ddg && eng.ddg.results && eng.ddg.results.length) {
+    document.getElementById('ddgCard').style.display = 'block';
+    document.getElementById('ddgResults').innerHTML = eng.ddg.results.map(resultHtml).join('');
+  }
+  // BraveSearch
+  if (eng.brave) {
+    const b = document.getElementById('braveCard');
+    const note = document.getElementById('braveNote');
+    if (!eng.brave.configured) {
+      b.style.display = 'block';
+      note.style.display = 'inline-block';
+      document.getElementById('braveResults').innerHTML = '';
+    } else if (eng.brave.results && eng.brave.results.length) {
+      b.style.display = 'block';
+      note.style.display = 'none';
+      document.getElementById('braveResults').innerHTML = eng.brave.results.map(resultHtml).join('');
+    }
+  }
+  // 関連語候補
+  const terms = r.related_terms || [];
+  if (terms.length) {
+    const card = document.getElementById('termsCard');
+    if (card) {
+      card.style.display = 'block';
+      const list = document.getElementById('termsList');
+      list.innerHTML = '';
+      terms.forEach(term => {
+        const chip = document.createElement('span');
+        chip.className = 'list-item';
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:#f2f4f8;border-radius:16px;font-size:13px';
+        const label = document.createElement('span');
+        label.textContent = term;
+        chip.appendChild(label);
+        if (window.__canAdd) {
+          const btn = document.createElement('button');
+          btn.className = 'chip-x';
+          btn.textContent = '+';
+          btn.title = 'キーワードに追加';
+          btn.onclick = async () => {
+            await api('POST', '/api/keywords', {term: term});
+            toast(term + ' を追加しました');
+            chip.style.opacity = '0.5';
+            btn.disabled = true;
+          };
+          chip.appendChild(btn);
+        }
+        list.appendChild(chip);
+      });
+      const bulk = document.getElementById('bulkAddBtn');
+      if (bulk) bulk.onclick = async () => {
+        const r2 = await api('POST', '/api/keywords/bulk', {terms: terms.join(', ')});
+        toast((r2.added ? r2.added.length : 0) + ' 件追加しました');
+      };
+    }
+  }
+}
+window.__canAdd = {{ 'true' if can_add else 'false' }};
+</script>
+{% endblock %}

@@ -2,7 +2,7 @@
 import datetime as dt
 
 from sqlalchemy import (Boolean, Column, DateTime, ForeignKey, Integer, String,
-                        Text, UniqueConstraint)
+                        Table, Text, UniqueConstraint)
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -12,16 +12,39 @@ def utcnow():
     return dt.datetime.now(dt.timezone.utc)
 
 
+# ユーザーグループのメンバーシップ(多対多)。User クラスより先に定義する。
+group_members = Table(
+    "group_members", Base.metadata,
+    Column("group_id", Integer, ForeignKey("user_groups.id"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
+)
+
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     name = Column(String(120), default="")
-    role = Column(String(20), default="viewer")   # admin / editor / viewer
-    password_hash = Column(String(255), default="")  # admin のみ設定
+    role = Column(String(20), default="viewer")   # root / admin / editor / viewer
+    password_hash = Column(String(255), default="")  # 管理者系のみ設定
     is_frozen = Column(Boolean, default=False)
     created_at = Column(DateTime, default=utcnow)
     last_login = Column(DateTime, nullable=True)
+    groups = relationship("UserGroup", secondary=group_members,
+                          back_populates="members")
+
+
+class UserGroup(Base):
+    """ユーザーのグループ。root はスーパーユーザー(admin)も、
+    root/admin は一般ユーザーをグループ化できる."""
+    __tablename__ = "user_groups"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), unique=True, nullable=False)
+    description = Column(String(300), default="")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    members = relationship("User", secondary=group_members,
+                           back_populates="groups")
 
 
 class Site(Base):

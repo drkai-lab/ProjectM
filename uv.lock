@@ -567,8 +567,8 @@ wheels = [
 ]
 
 [[package]]
-name = "projectw"
-version = "0.1.0"
+name = "projectm"
+version = "1.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "apscheduler" },
@@ -586,7 +586,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "starlette-csrf" },
     { name = "uvicorn" },
-    { name = "uvloop" },
+    { name = "uvloop", marker = "sys_platform != 'win32'" },
     { name = "websockets" },
 ]
 
@@ -612,7 +612,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.52" },
     { name = "starlette-csrf", specifier = ">=3.0.0" },
     { name = "uvicorn", specifier = ">=0.52.4" },
-    { name = "uvloop", specifier = ">=0.22.1" },
+    { name = "uvloop", marker = "sys_platform != 'win32'", specifier = ">=0.22.1" },
     { name = "websockets", specifier = ">=17.0.1" },
 ]
 

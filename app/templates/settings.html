@@ -38,36 +38,82 @@
   </form>
 </div>
 
-{% if u.role == 'admin' %}
+{% if u.role in ['root','admin'] %}
 <div class="card">
   <div class="card-title">{{ t.get('user_management', 'ユーザー管理') }}</div>
   <form id="userForm" class="inline-form" style="flex-wrap:wrap">
     <input name="email" type="email" placeholder="メールアドレス" required style="flex:1 1 100%">
     <input name="name" placeholder="名前(任意)" style="flex:1 1 55%">
     <select name="role">
+      {% if u.role == 'root' %}<option value="root">root</option>{% endif %}
       <option value="viewer">viewer</option>
       <option value="editor">editor</option>
-      <option value="admin">admin</option>
+      <option value="admin">admin (スーパーユーザー)</option>
     </select>
     <button class="btn btn-primary">{{ t.get('invite', '招待') }}</button>
   </form>
   <div class="list" id="userList">
     {% for usr in users %}
+    {% set manageable = u.role == 'root' or usr.role in ['editor','viewer'] %}
     <div class="list-item user-row" data-uid="{{ usr.id }}">
       <div style="min-width:0">
         <div class="site-url">{{ usr.name or usr.email }}
           {% if usr.is_frozen %}<span class="badge badge-frozen">凍結</span>{% endif %}</div>
         <div class="site-sub">{{ usr.email }} · {{ usr.role }}</div>
       </div>
-      <select class="user-role" {% if usr.email == 'iamworkingwell@gmail.com' %}disabled{% endif %}>
+      <select class="user-role" {% if not manageable or usr.id == u.id %}disabled{% endif %}>
+        {% if u.role == 'root' %}<option value="root" {% if usr.role=='root' %}selected{% endif %}>root</option>{% endif %}
         <option value="viewer" {% if usr.role=='viewer' %}selected{% endif %}>viewer</option>
         <option value="editor" {% if usr.role=='editor' %}selected{% endif %}>editor</option>
-        <option value="admin" {% if usr.role=='admin' %}selected{% endif %}>admin</option>
+        <option value="admin" {% if usr.role=='admin' %}selected{% endif %}>admin (スーパーユーザー)</option>
       </select>
-      {% if usr.email != 'iamworkingwell@gmail.com' %}
+      {% if manageable and usr.id != u.id %}
       <button class="btn-sm user-freeze">{{ '解除' if usr.is_frozen else '凍結' }}</button>
       <button class="chip-x user-del">×</button>
       {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">{{ t.get('group_management', 'ユーザーグループ管理') }}</div>
+  <p style="color:#666;font-size:12px;margin:0 0 10px">
+    {{ t.get('group_hint', 'root はスーパーユーザー(admin)も、admin は一般ユーザーをグループ化できます。') }}
+  </p>
+  <form id="groupForm" class="inline-form" style="flex-wrap:wrap;margin-bottom:8px">
+    <input name="name" placeholder="グループ名" required style="flex:1 1 40%">
+    <input name="description" placeholder="説明(任意)" style="flex:2 1 60%">
+    <button class="btn btn-primary">{{ t.add|default('追加') }}</button>
+  </form>
+  <div id="groupList">
+    {% for g in groups %}
+    <div class="list-item group-row" data-gid="{{ g.id }}" style="display:block;padding:12px 0;border-top:1px solid #eee">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>{{ g.name }}</strong>
+        {% if u.role == 'root' or g.created_by is not none and g.created_by == u.id %}
+        <button class="chip-x group-del" title="グループを削除">×</button>
+        {% endif %}
+      </div>
+      {% if g.description %}<div class="site-sub">{{ g.description }}</div>{% endif %}
+      <div class="group-members" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        {% for m in g.members %}
+        <span class="list-item group-member" data-uid="{{ m.id }}" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;background:#f2f4f8;border-radius:12px;font-size:12px">
+          {{ m.name or m.email }} ({{ m.role }})
+          {% if u.role == 'root' or m.role in ['editor','viewer'] %}<button class="chip-x member-del" title="グループから外す">×</button>{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      <form class="group-add-form inline-form" style="margin-top:8px">
+        <select name="user_id">
+          {% for usr in users if usr not in g.members %}
+            {% if u.role == 'root' or usr.role in ['editor','viewer'] %}
+            <option value="{{ usr.id }}">{{ usr.name or usr.email }} ({{ usr.role }})</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+        <button class="btn-sm">{{ t.get('add_to_group', 'グループに追加') }}</button>
+      </form>
     </div>
     {% endfor %}
   </div>
@@ -118,6 +164,38 @@ if (uf) {
       if (!confirm('削除しますか?')) return;
       await api('DELETE', '/api/users/' + uid); row.remove(); toast('削除しました');
     };
+  });
+}
+
+const gf = document.getElementById('groupForm');
+if (gf) {
+  gf.onsubmit = async (e) => {
+    e.preventDefault();
+    await api('POST', '/api/groups', new FormData(gf));
+    toast('グループを作成しました'); setTimeout(() => location.reload(), 800);
+  };
+  document.querySelectorAll('.group-row').forEach(row => {
+    const gid = row.dataset.gid;
+    const del = row.querySelector('.group-del');
+    if (del) del.onclick = async () => {
+      if (!confirm('グループを削除しますか?')) return;
+      await api('DELETE', '/api/groups/' + gid); location.reload();
+    };
+    const addForm = row.querySelector('.group-add-form');
+    if (addForm) addForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const sel = addForm.user_id;
+      if (!sel.value) { toast('ユーザーを選択してください'); return; }
+      await api('POST', '/api/groups/' + gid + '/members', {user_id: sel.value});
+      location.reload();
+    };
+    row.querySelectorAll('.member-del').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('グループから外しますか?')) return;
+        await api('DELETE', `/api/groups/${gid}/members/` + btn.closest('.group-member').dataset.uid);
+        location.reload();
+      };
+    });
   });
 }
 </script>

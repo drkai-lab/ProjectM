@@ -17,12 +17,12 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from . import auth, config, db as dbmod, scheduler
+from . import auth, config, db as dbmod, scheduler, search_engine
 from .i18n import COOKIE_NAME as LANG_COOKIE, SUPPORTED_LANGUAGES, TRANSLATIONS, template_context as i18n_context
-from .models import Keyword, Run, Schedule, Site, User
+from .models import Keyword, Run, Schedule, Site, User, UserGroup
 from .scraper_engine import run_scan
 
-app = FastAPI(title="ProjectW")
+app = FastAPI(title="ProjectM")
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 limiter = Limiter(key_func=get_remote_address, headers_enabled=True)
 app.state.limiter = limiter
@@ -172,16 +172,31 @@ def require_user(request: Request, db: OrmSession = Depends(get_db)):
     return u
 
 
+# ProjectM ロール階層: root > admin(スーパーユーザー) > editor > viewer
+ROLE_RANK = {"viewer": 0, "editor": 1, "admin": 2, "root": 3}
+
+
+def role_rank(role: str | None) -> int:
+    return ROLE_RANK.get(role or "", -1)
+
+
+def require_root(request: Request, db: OrmSession = Depends(get_db)):
+    u = current_user(request, db)
+    if not u or u.role != "root":
+        raise HTTPException(status_code=403, detail="root権限が必要です")
+    return u
+
+
 def require_admin(request: Request, db: OrmSession = Depends(get_db)):
     u = current_user(request, db)
-    if not u or u.role != "admin":
+    if not u or role_rank(u.role) < ROLE_RANK["admin"]:
         raise HTTPException(status_code=403, detail="管理者権限が必要です")
     return u
 
 
 def require_editor(request: Request, db: OrmSession = Depends(get_db)):
     u = current_user(request, db)
-    if not u or u.role not in ("admin", "editor"):
+    if not u or role_rank(u.role) < ROLE_RANK["editor"]:
         raise HTTPException(status_code=403, detail="編集権限が必要です")
     return u
 
@@ -324,9 +339,22 @@ def settings_page(request: Request, db: OrmSession = Depends(get_db)):
     if not u:
         return RedirectResponse("/login", status_code=302)
     sched = db.query(Schedule).first()
-    users = db.query(User).order_by(User.id).all() if u.role == "admin" else []
+    is_mgr = role_rank(u.role) >= ROLE_RANK["admin"]
+    users = db.query(User).order_by(User.id).all() if is_mgr else []
+    groups = db.query(UserGroup).order_by(UserGroup.id).all() if is_mgr else []
     return templates.TemplateResponse(request, "settings.html",
-                                      template_context(request, {"u": u, "sched": sched, "users": users, "active_page": "settings"}))
+                                      template_context(request, {"u": u, "sched": sched,
+                                                                 "users": users, "groups": groups,
+                                                                 "active_page": "settings"}))
+
+
+@app.get("/search", response_class=HTMLResponse)
+def search_page(request: Request, db: OrmSession = Depends(get_db)):
+    u = current_user(request, db)
+    if not u:
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse(request, "search.html",
+                                      template_context(request, {"u": u, "active_page": "search"}))
 
 
 # ---------------- サイト CRUD ----------------
@@ -452,14 +480,29 @@ def update_schedule(mode: str = Form(...), interval_hours: int = Form(6),
     return {"ok": True, "next_run": scheduler.next_run_time()}
 
 
-# ---------------- ユーザー管理 (Admin) ----------------
+# ---------------- ユーザー管理 (root / Admin) ----------------
+# ProjectM 権限ルール:
+# - root: すべてのユーザー(スーパーユーザー/admin 含む)の作成・ロール変更・凍結・削除、グループ化
+# - admin(スーパーユーザー): editor/viewer の作成・ロール変更・凍結・削除、グループ化
+#   (root ロールの作成と、他の admin への操作は root のみ)
+
+def _check_manage_target(u: User, tu: User):
+    """actor u が target tu を管理できるか。ダメなら HTTPException."""
+    if u.id == tu.id:
+        raise HTTPException(400, "自分自身には操作できません")
+    if u.role != "root" and role_rank(tu.role) >= ROLE_RANK["admin"]:
+        raise HTTPException(403, "スーパーユーザー(admin)への操作は root のみです")
+
+
 @app.post("/api/users")
 def add_user(email: str = Form(...), name: str = Form(""), role: str = Form("viewer"),
              db: OrmSession = Depends(get_db), u: User = Depends(require_admin)):
     email = email.strip().lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(400, "既に存在します")
-    nu = User(email=email, name=name, role=role if role in ("admin", "editor", "viewer") else "viewer")
+    allowed = ("root", "admin", "editor", "viewer") if u.role == "root" \
+        else ("admin", "editor", "viewer")
+    nu = User(email=email, name=name, role=role if role in allowed else "viewer")
     db.add(nu)
     db.commit()
     # 招待マジックリンク送信
@@ -476,15 +519,16 @@ def update_user(uid: int, name: str = Form(None), role: str = Form(None),
     tu = db.get(User, uid)
     if not tu:
         raise HTTPException(404, "見つかりません")
-    if tu.email == config.SUPERUSER_EMAIL.lower() and (role and role != "admin"):
-        raise HTTPException(400, "スーパーユーザーのロールは変更できません")
+    is_self = (u.id == tu.id)
+    if role is not None or frozen is not None:
+        _check_manage_target(u, tu)  # ロール変更・凍結は自分自身には不可
+    allowed_roles = ("root", "admin", "editor", "viewer") if u.role == "root" \
+        else ("admin", "editor", "viewer")
     if name is not None:
         tu.name = name
-    if role is not None and role in ("admin", "editor", "viewer"):
+    if role is not None and role in allowed_roles:
         tu.role = role
     if frozen is not None:
-        if tu.email == config.SUPERUSER_EMAIL.lower():
-            raise HTTPException(400, "スーパーユーザーは凍結できません")
         tu.is_frozen = frozen in ("1", "true", "on", "True")
     db.commit()
     return {"ok": True}
@@ -495,11 +539,142 @@ def delete_user(uid: int, db: OrmSession = Depends(get_db), u: User = Depends(re
     tu = db.get(User, uid)
     if not tu:
         raise HTTPException(404, "見つかりません")
-    if tu.email == config.SUPERUSER_EMAIL.lower():
-        raise HTTPException(400, "スーパーユーザーは削除できません")
+    _check_manage_target(u, tu)
     db.delete(tu)
     db.commit()
     return {"ok": True}
+
+
+# ---------------- ユーザーグループ (root / Admin) ----------------
+def _group_payload(g: UserGroup) -> dict:
+    return {
+        "id": g.id, "name": g.name, "description": g.description,
+        "created_by": g.created_by,
+        "members": [{"id": m.id, "email": m.email, "name": m.name, "role": m.role}
+                    for m in sorted(g.members, key=lambda x: -ROLE_RANK.get(x.role or "", 0))],
+    }
+
+
+@app.get("/api/groups")
+def list_groups(db: OrmSession = Depends(get_db), u: User = Depends(require_user)):
+    groups = db.query(UserGroup).order_by(UserGroup.id).all()
+    return {"ok": True, "groups": [_group_payload(g) for g in groups]}
+
+
+@app.post("/api/groups")
+def create_group(name: str = Form(...), description: str = Form(""),
+                 db: OrmSession = Depends(get_db), u: User = Depends(require_admin)):
+    name = name.strip()
+    if not name:
+        raise HTTPException(400, "グループ名が空です")
+    if db.query(UserGroup).filter(UserGroup.name == name).first():
+        raise HTTPException(400, "同名のグループが存在します")
+    g = UserGroup(name=name, description=description.strip(), created_by=u.id)
+    db.add(g)
+    db.commit()
+    return {"ok": True, "id": g.id}
+
+
+@app.put("/api/groups/{gid}")
+def update_group(gid: int, name: str = Form(None), description: str = Form(None),
+                 db: OrmSession = Depends(get_db), u: User = Depends(require_admin)):
+    g = db.get(UserGroup, gid)
+    if not g:
+        raise HTTPException(404, "グループが見つかりません")
+    if u.role != "root" and g.created_by != u.id:
+        raise HTTPException(403, "このグループの編集は作成者または root のみです")
+    if name is not None:
+        n = name.strip()
+        if not n:
+            raise HTTPException(400, "グループ名が空です")
+        dup = db.query(UserGroup).filter(UserGroup.name == n, UserGroup.id != gid).first()
+        if dup:
+            raise HTTPException(400, "同名のグループが存在します")
+        g.name = n
+    if description is not None:
+        g.description = description.strip()
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/groups/{gid}")
+def delete_group(gid: int, db: OrmSession = Depends(get_db), u: User = Depends(require_admin)):
+    g = db.get(UserGroup, gid)
+    if not g:
+        raise HTTPException(404, "グループが見つかりません")
+    has_admins = any(role_rank(m.role) >= ROLE_RANK["admin"] for m in g.members)
+    if u.role != "root" and (g.created_by != u.id or has_admins):
+        raise HTTPException(403, "このグループの削除は作成者または root のみです")
+    db.delete(g)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/groups/{gid}/members")
+def add_group_member(gid: int, user_id: str = Form(...),
+                     db: OrmSession = Depends(get_db), u: User = Depends(require_admin)):
+    g = db.get(UserGroup, gid)
+    if not g:
+        raise HTTPException(404, "グループが見つかりません")
+    try:
+        tu = db.get(User, int(user_id))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "無効なユーザーIDです")
+    if not tu:
+        raise HTTPException(404, "ユーザーが見つかりません")
+    # root はスーパーユーザー(admin)もグループ化できる。admin は一般ユーザーのみ。
+    if u.role != "root" and role_rank(tu.role) >= ROLE_RANK["admin"]:
+        raise HTTPException(403, "スーパーユーザーのグループ化は root のみです")
+    if tu not in g.members:
+        g.members.append(tu)
+        db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/groups/{gid}/members/{uid}")
+def remove_group_member(gid: int, uid: int,
+                        db: OrmSession = Depends(get_db), u: User = Depends(require_admin)):
+    g = db.get(UserGroup, gid)
+    if not g:
+        raise HTTPException(404, "グループが見つかりません")
+    tu = db.get(User, uid)
+    if not tu or tu not in g.members:
+        raise HTTPException(404, "メンバーが見つかりません")
+    if u.role != "root" and role_rank(tu.role) >= ROLE_RANK["admin"]:
+        raise HTTPException(403, "スーパーユーザーのグループ外しは root のみです")
+    g.members.remove(tu)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------------- 検索エンジンモード (DuckDuckGo / BraveSearch) ----------------
+@app.post("/api/search/related")
+@limiter.limit("10/minute")
+def search_related_api(request: Request, q: str = Form(...), engines: str = Form("ddg,brave"),
+                       db: OrmSession = Depends(get_db), u: User = Depends(require_user)):
+    eng = tuple(e.strip() for e in (engines or "").split(",") if e.strip() in ("ddg", "brave"))
+    if not eng:
+        eng = ("ddg",)
+    return JSONResponse(search_engine.search_related(q, engines=eng))
+
+
+@app.post("/api/keywords/bulk")
+def add_keywords_bulk(terms: str = Form(...), db: OrmSession = Depends(get_db),
+                      u: User = Depends(require_editor)):
+    """検索結果の関連語をまとめてキーワード登録する (カンマ/改行/セミコロン区切り)."""
+    added = []
+    seen: set[str] = set()
+    for raw in re.split(r"[,\n;]+", terms or ""):
+        term = raw.strip()
+        if not term or term in seen:
+            continue  # バッチ内の重複 (autoflush=False のためDB未反映)
+        if db.query(Keyword).filter(Keyword.term == term).first():
+            continue
+        db.add(Keyword(term=term, enabled=True))
+        added.append(term)
+        seen.add(term)
+    db.commit()
+    return {"ok": True, "added": added}
 
 
 @app.get("/static/sw.js")

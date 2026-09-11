@@ -1,4 +1,4 @@
-"""ProjectW設定。秘密値は環境変数からのみ読み込む。"""
+"""ProjectM設定。秘密値は環境変数からのみ読み込む。"""
 import os
 from pathlib import Path
 
@@ -11,7 +11,7 @@ except Exception:
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("PW_DATA_DIR", BASE_DIR.parent / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-DB_URL = os.getenv("PW_DB_URL", f"sqlite:///{DATA_DIR / 'projectw.db'}")
+DB_URL = os.getenv("PW_DB_URL", f"sqlite:///{DATA_DIR / 'projectm.db'}")
 
 SECRET_KEY = os.getenv("PW_SECRET_KEY", "")
 MAGIC_LINK_TTL = int(os.getenv("PW_MAGIC_TTL", "900"))
@@ -21,6 +21,10 @@ JWT_ALG = "HS256"
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 MAIL_FROM = os.getenv("PW_MAIL_FROM", "ProjectW <onboarding@resend.dev>")
 PUBLIC_BASE_URL = os.getenv("PW_PUBLIC_URL", "http://localhost:8000")
+
+# ProjectM: root ユーザー(スーパーユーザー/admin より上位)。設定すると初回起動時に作成される。
+ROOT_EMAIL = os.getenv("PW_ROOT_EMAIL", "")
+ROOT_PASSWORD = os.getenv("PW_ROOT_PASSWORD", "")
 
 SUPERUSER_EMAIL = os.getenv("PW_SUPERUSER_EMAIL", "")
 SUPERUSER_PASSWORD = os.getenv("PW_SUPERUSER_PASSWORD", "")
@@ -50,3 +54,6 @@ TELEGRAM_CHAT_ID = os.getenv("PW_TELEGRAM_CHAT_ID", "")
 # 通知言語: zhを既定(既存運用設定)。UIは別途cookie/Accept-Languageで選択。
 NOTIFY_LANG = os.getenv("PW_NOTIFY_LANG", "zh")
 SUPPORTED_LANGS = ("ja", "en", "zh", "ms", "ko")
+
+# 検索エンジンモード: BraveSearch APIキー(未設定時はDuckDuckGoのみ動作)
+BRAVE_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "") or os.getenv("BRAVE_API_KEY", "")
