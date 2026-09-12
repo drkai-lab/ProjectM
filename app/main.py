@@ -1,4 +1,4 @@
-"""ProjectW FastAPI アプリ本体."""
+"""ProjectM FastAPI アプリ本体."""
 import datetime as dt
 import http.cookies
 import re

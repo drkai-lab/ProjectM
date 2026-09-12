@@ -1,4 +1,4 @@
-/* ProjectW 共通ヘルパー (One UI 風) */
+/* ProjectM 共通ヘルパー (One UI 風) */
 
 /**
  * fetch ラッパー。form 形式 (application/x-www-form-urlencoded) で送信する。

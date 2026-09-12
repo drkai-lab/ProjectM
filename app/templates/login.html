@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#0381fe">
-  <title>{{ t.login|default('ログイン') }} | ProjectW</title>
+  <title>{{ t.login|default('ログイン') }} | ProjectM</title>
   <link rel="manifest" href="/static/manifest.json">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body class="login">
   <div class="login-card">
     <div class="login-logo">W</div>
-    <h1 class="login-title">ProjectW</h1>
+    <h1 class="login-title">ProjectM</h1>
     
     <div class="language-switcher" style="position:absolute;top:14px;right:14px;">
         <select id="language-select" class="language-select" aria-label="言語" onchange="if(this.value) window.location.href='/language/'+this.value+'?next='+encodeURIComponent(window.location.pathname)">

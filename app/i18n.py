@@ -1,4 +1,4 @@
-"""ProjectW の軽量な多言語基盤（外部依存なし）。"""
+"""ProjectM の軽量な多言語基盤（外部依存なし）。"""
 from __future__ import annotations
 
 from typing import Any, Mapping

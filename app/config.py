@@ -19,7 +19,7 @@ SESSION_TTL = int(os.getenv("PW_SESSION_TTL", str(30 * 24 * 3600)))
 JWT_ALG = "HS256"
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-MAIL_FROM = os.getenv("PW_MAIL_FROM", "ProjectW <onboarding@resend.dev>")
+MAIL_FROM = os.getenv("PW_MAIL_FROM", "ProjectM <onboarding@resend.dev>")
 PUBLIC_BASE_URL = os.getenv("PW_PUBLIC_URL", "http://localhost:8000")
 
 # ProjectM: root ユーザー(スーパーユーザー/admin より上位)。設定すると初回起動時に作成される。
