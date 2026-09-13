@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light dark;
   --primary: #0381fe;
   --primary-hover: #0266d6;
   --bg: #f2f4f7;
@@ -245,6 +246,7 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--primary);
   background: var(--surface);
 }
+::placeholder { color: var(--text-secondary); opacity: 1; }
 
 /* ===== Toggle Switch ===== */
 .toggle {

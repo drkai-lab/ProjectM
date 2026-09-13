@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ t.site_management|default('サイト管理') }} — ProjectM{% endblock %}
 {% block content %}
-{% set can_edit = u.role in ['admin','editor'] %}
+{% set can_edit = u.role in ['root','admin','editor'] %}
 
 <div class="card">
   <div class="card-title">{{ t.keywords|default('キーワード') }} ({{ kws|length }})</div>
   {% if can_edit %}
   <form id="kwForm" class="inline-form" style="flex-wrap:wrap">
-    <input name="term" placeholder="{{ t.add_keyword|default('キーワードを追加') }}" required style="flex:1 1 40%">
-    <input name="label" placeholder="{{ t.label_optional|default('ラベル(任意)') }}" style="flex:1 1 30%">
+    <input type="text" name="term" placeholder="{{ t.add_keyword|default('キーワードを追加') }}" required style="flex:1 1 40%">
+    <input type="text" name="label" placeholder="{{ t.label_optional|default('ラベル(任意)') }}" style="flex:1 1 30%">
     <button class="btn btn-primary">{{ t.add|default('追加') }}</button>
   </form>
   {% endif %}
@@ -38,8 +38,8 @@
   <div class="card-title">{{ t.monitored_sites|default('監視サイト') }} ({{ sites|length }})</div>
   {% if can_edit %}
   <form id="siteForm" class="inline-form" style="flex-wrap:wrap">
-    <input name="url" placeholder="https://example.gov.my/" required style="flex:1 1 100%">
-    <input name="label" placeholder="{{ t.label_optional|default('ラベル(任意)') }}" style="flex:1 1 60%">
+    <input type="url" name="url" placeholder="https://example.gov.my/" required style="flex:1 1 100%">
+    <input type="text" name="label" placeholder="{{ t.label_optional|default('ラベル(任意)') }}" style="flex:1 1 60%">
     <button class="btn btn-primary">{{ t.add_site|default('サイト追加') }}</button>
   </form>
   {% endif %}

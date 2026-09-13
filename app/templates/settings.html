@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t.settings|default('設定') }} — ProjectM{% endblock %}
 {% block content %}
-{% set can_edit = u.role in ['admin','editor'] %}
+{% set can_edit = u.role in ['root','admin','editor'] %}
 
 <div class="card">
   <div class="card-title">{{ t.scan_schedule|default('スキャンスケジュール') }}</div>
@@ -20,16 +20,16 @@
     </div>
     <div class="mode-block" data-mode="daily">
       <label class="field"><span>時刻(カンマ区切り 例 07:00,19:00)</span>
-        <input name="daily_times" value="{{ sched.daily_times }}" placeholder="07:00,19:00"></label>
+        <input type="text" name="daily_times" value="{{ sched.daily_times }}" placeholder="07:00,19:00"></label>
     </div>
     <div class="mode-block" data-mode="cron">
       <label class="field"><span>cron式 (分 時 日 月 曜)</span>
-        <input name="cron_expr" value="{{ sched.cron_expr }}" placeholder="0 */6 * * *"></label>
+        <input type="text" name="cron_expr" value="{{ sched.cron_expr }}" placeholder="0 */6 * * *"></label>
     </div>
     <label class="field"><span>1日の最大実行回数(0=無制限)</span>
       <input type="number" name="max_runs_per_day" min="0" value="{{ sched.max_runs_per_day }}"></label>
     <label class="field"><span>タイムゾーン</span>
-      <input name="timezone" value="{{ sched.timezone }}"></label>
+      <input type="text" name="timezone" value="{{ sched.timezone }}"></label>
     <label class="list-item" style="padding:14px 0">
       <span>{{ t.schedule_enabled|default('スケジュール有効') }}</span>
       <span class="toggle"><input type="checkbox" name="enabled" {% if sched.enabled %}checked{% endif %}><span class="slider"></span></span>
@@ -43,7 +43,7 @@
   <div class="card-title">{{ t.get('user_management', 'ユーザー管理') }}</div>
   <form id="userForm" class="inline-form" style="flex-wrap:wrap">
     <input name="email" type="email" placeholder="メールアドレス" required style="flex:1 1 100%">
-    <input name="name" placeholder="名前(任意)" style="flex:1 1 55%">
+    <input type="text" name="name" placeholder="名前(任意)" style="flex:1 1 55%">
     <select name="role">
       {% if u.role == 'root' %}<option value="root">root</option>{% endif %}
       <option value="viewer">viewer</option>
@@ -82,8 +82,8 @@
     {{ t.get('group_hint', 'root はスーパーユーザー(admin)も、admin は一般ユーザーをグループ化できます。') }}
   </p>
   <form id="groupForm" class="inline-form" style="flex-wrap:wrap;margin-bottom:8px">
-    <input name="name" placeholder="グループ名" required style="flex:1 1 40%">
-    <input name="description" placeholder="説明(任意)" style="flex:2 1 60%">
+    <input type="text" name="name" placeholder="グループ名" required style="flex:1 1 40%">
+    <input type="text" name="description" placeholder="説明(任意)" style="flex:2 1 60%">
     <button class="btn btn-primary">{{ t.add|default('追加') }}</button>
   </form>
   <div id="groupList">
@@ -98,7 +98,7 @@
       {% if g.description %}<div class="site-sub">{{ g.description }}</div>{% endif %}
       <div class="group-members" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
         {% for m in g.members %}
-        <span class="list-item group-member" data-uid="{{ m.id }}" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;background:#f2f4f8;border-radius:12px;font-size:12px">
+        <span class="list-item group-member" data-uid="{{ m.id }}" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;background:var(--surface-2);border-radius:12px;font-size:12px">
           {{ m.name or m.email }} ({{ m.role }})
           {% if u.role == 'root' or m.role in ['editor','viewer'] %}<button class="chip-x member-del" title="グループから外す">×</button>{% endif %}
         </span>

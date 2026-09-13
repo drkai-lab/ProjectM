@@ -22,7 +22,7 @@
   </div>
 </div>
 
-{% if u.role in ['admin','editor'] %}
+{% if u.role in ['root','admin','editor'] %}
 <button class="btn btn-primary btn-block" id="scanBtn" style="margin:18px 0">
   {{ t.scan_now_btn|default('今すぐスキャン実行') }}
 </button>
