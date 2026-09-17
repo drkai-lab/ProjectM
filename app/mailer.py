@@ -16,6 +16,28 @@ def _relay_configured() -> bool:
     return bool(config.MAIL_RELAY_URL and config.MAIL_RELAY_KEY)
 
 
+# 配送できない予約ドメイン(RFC 2606 / RFC 6762)。ここへ送るとバウンスが発生するため
+# 送信前に拒否する(テスト用アドレスが本番経路に混ざった事故の再発防止)。
+_UNDELIVERABLE_SUFFIXES = (".local", ".invalid", ".test", ".example", ".localhost")
+_RESERVED_DOMAINS = {"localhost", "local", "invalid", "test", "example"}
+
+
+def _deliverable(to_email: str) -> bool:
+    """配送可能に見える宛先か。書式不正と予約ドメインを弾く。"""
+    addr = (to_email or "").strip().lower()
+    if "@" not in addr:
+        return False
+    local, domain = addr.rsplit("@", 1)
+    if not local.strip():
+        return False
+    domain = domain.strip()
+    if not domain:
+        return False
+    if domain in _RESERVED_DOMAINS:
+        return False
+    return not domain.endswith(_UNDELIVERABLE_SUFFIXES)
+
+
 def _send_relay(to_email: str, subject: str, text: str, html: str) -> tuple[bool, str]:
     if httpx is None:
         return False, "httpx がありません"
@@ -63,6 +85,8 @@ def console_allowed() -> bool:
 
 def send_mail(to_email: str, subject: str, text: str, html: str = "") -> tuple[bool, str]:
     """(ok, detail) を返す。バックエンド未設定なら (False, "not-configured")。"""
+    if not _deliverable(to_email):
+        return False, f"invalid-recipient: {to_email}"
     if _relay_configured():
         try:
             return _send_relay(to_email, subject, text, html)

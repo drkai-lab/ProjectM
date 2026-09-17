@@ -9,6 +9,13 @@ os.environ["PW_SUPERUSER_EMAIL"] = "admin@test.local"
 os.environ["PW_SUPERUSER_PASSWORD"] = "test-pass-123"
 os.environ["PW_ENV"] = "development"
 os.environ["PW_COOKIE_SECURE"] = "0"
+# 外部への実送信を遮断する。本番の .env があるディレクトリで pytest を走らせても
+# 実メール/実Telegramを送らない(load_dotenv は既存の環境変数を上書きしない)。
+os.environ["PW_MAIL_RELAY_URL"] = ""
+os.environ["PW_MAIL_RELAY_KEY"] = ""
+os.environ["RESEND_API_KEY"] = ""
+os.environ["PW_MAIL_ALLOW_CONSOLE"] = "1"
+os.environ["PW_TELEGRAM_TOKEN"] = ""
 
 import pytest  # noqa: E402
 
