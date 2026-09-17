@@ -5,12 +5,11 @@ import hmac
 import os
 import secrets
 
-import httpx
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from jose import jwt
 from sqlalchemy import update
 
-from . import config
+from . import config, mailer
 from .models import MagicToken, User
 
 _serializer = URLSafeTimedSerializer(config.SECRET_KEY, salt="magic-link")
@@ -36,18 +35,36 @@ def verify_password(pw: str, stored: str) -> bool:
 
 
 # ---------- マジックリンク ----------
-def make_magic_token(email: str, db) -> str:
+_invite_serializer = URLSafeTimedSerializer(config.SECRET_KEY, salt="magic-invite")
+
+
+def make_magic_token(email: str, db, kind: str = "login") -> str:
+    """kind="invite" は招待用。ログイン用より長い期限の署名器で発行する。"""
     jti = secrets.token_urlsafe(24)
     db.add(MagicToken(jti=jti, email=email.lower(), used=False))
     db.commit()
-    return _serializer.dumps({"email": email.lower(), "jti": jti})
+    payload = {"email": email.lower(), "jti": jti}
+    if kind == "invite":
+        return _invite_serializer.dumps(payload)
+    return _serializer.dumps(payload)
+
+
+def _load_token(token: str):
+    """ログイン用 → 招待用の順で検証し、payload(dict) か None を返す。"""
+    try:
+        return _serializer.loads(token, max_age=config.MAGIC_LINK_TTL)
+    except (BadSignature, SignatureExpired):
+        pass
+    try:
+        return _invite_serializer.loads(token, max_age=config.INVITE_LINK_TTL)
+    except (BadSignature, SignatureExpired):
+        return None
 
 
 def verify_magic_token(token: str, db):
     """戻り値 email or None. ワンタイム保証(jti を used に)."""
-    try:
-        data = _serializer.loads(token, max_age=config.MAGIC_LINK_TTL)
-    except (BadSignature, SignatureExpired):
+    data = _load_token(token)
+    if not data:
         return None
     rec = db.query(MagicToken).filter(MagicToken.jti == data["jti"]).first()
     if not rec or rec.used or rec.email != data.get("email", "").lower():
@@ -77,12 +94,17 @@ def decode_session_jwt(token: str):
         return None
 
 
-# ---------- メール送信 (Resend HTTP API) ----------
-def send_magic_email(to_email: str, link: str) -> tuple[bool, str]:
-    if not config.RESEND_API_KEY:
-        # キー未設定時はコンソール出力にフォールバック(開発用)
-        print(f"[MAGIC-LINK for {to_email}] {link}")
-        return True, "console"
+# ---------- メール送信 ----------
+# 送信は app/mailer.py に集約。戻り値 (ok, detail) をそのまま返し、成功を偽装しない。
+def send_magic_email(to_email: str, link: str, kind: str = "login") -> tuple[bool, str]:
+    minutes = max(1, config.MAGIC_LINK_TTL // 60)
+    days = max(1, config.INVITE_LINK_TTL // 86400)
+    valid = f"{minutes}分間有効"
+    if kind == "invite":
+        valid = f"{days}日間有効"
+    subject = f"{config.MAIL_SUBJECT_PREFIX}ログインリンク"
+    text = (f"下のリンクからログインしてください（{valid}）。\n\n{link}\n\n"
+            "心当たりが無い場合はこのメールを無視してください。\n")
     html = f"""
     <div style="font-family:sans-serif;max-width:480px;margin:auto">
       <h2 style="color:#0381fe">ProjectM ログイン</h2>
@@ -93,14 +115,4 @@ def send_magic_email(to_email: str, link: str) -> tuple[bool, str]:
       <p style="color:#888;font-size:12px;margin-top:24px">
          心当たりが無い場合はこのメールを無視してください。</p>
     </div>"""
-    try:
-        r = httpx.post("https://api.resend.com/emails",
-                       headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
-                       json={"from": config.MAIL_FROM, "to": [to_email],
-                             "subject": "ProjectM ログインリンク", "html": html},
-                       timeout=20)
-        if r.status_code in (200, 201):
-            return True, "sent"
-        return False, f"resend {r.status_code}: {r.text[:200]}"
-    except Exception as e:
-        return False, f"{type(e).__name__}: {e}"
+    return mailer.send_mail(to_email, subject, text, html)

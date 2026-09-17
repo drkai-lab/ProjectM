@@ -19,7 +19,14 @@ SESSION_TTL = int(os.getenv("PW_SESSION_TTL", str(30 * 24 * 3600)))
 JWT_ALG = "HS256"
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-MAIL_FROM = os.getenv("PW_MAIL_FROM", "ProjectM <onboarding@resend.dev>")
+MAIL_FROM = os.getenv("PW_MAIL_FROM", "ProjectM <info@vorlors.com>")
+MAIL_REPLY_TO = os.getenv("PW_MAIL_REPLY_TO", "info@vorlors.com")
+MAIL_SUBJECT_PREFIX = os.getenv("PW_MAIL_SUBJECT_PREFIX", "ProjectM ")
+MAIL_RELAY_URL = os.getenv("PW_MAIL_RELAY_URL", "")
+MAIL_RELAY_KEY = os.getenv("PW_MAIL_RELAY_KEY", "")
+MAIL_TIMEOUT = int(os.getenv("PW_MAIL_TIMEOUT", "25"))
+MAIL_ALLOW_CONSOLE = os.getenv("PW_MAIL_ALLOW_CONSOLE", "0").lower() in {"1", "true", "yes", "on"}
+INVITE_LINK_TTL = int(os.getenv("PW_INVITE_TTL", str(7 * 24 * 3600)))
 PUBLIC_BASE_URL = os.getenv("PW_PUBLIC_URL", "http://localhost:8000")
 
 # ProjectM: root ユーザー(スーパーユーザー/admin より上位)。設定すると初回起動時に作成される。

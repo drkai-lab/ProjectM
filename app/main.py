@@ -505,11 +505,15 @@ def add_user(email: str = Form(...), name: str = Form(""), role: str = Form("vie
     nu = User(email=email, name=name, role=role if role in allowed else "viewer")
     db.add(nu)
     db.commit()
-    # 招待マジックリンク送信
-    token = auth.make_magic_token(email, db)
+    # 招待マジックリンク送信(結果を必ず確認し、送信失敗を成功として返さない)
+    token = auth.make_magic_token(email, db, kind="invite")
     link = f"{config.PUBLIC_BASE_URL}/auth/verify?token={token}"
-    auth.send_magic_email(email, link)
-    return {"ok": True, "msg": "ユーザーを追加し招待リンクを送信しました"}
+    ok, info = auth.send_magic_email(email, link, kind="invite")
+    if not ok:
+        return {"ok": False, "invited": False, "link": link,
+                "msg": f"ユーザーは追加しましたが招待メールを送信できませんでした（{info}）。"
+                       f"次のリンクを直接渡してください: {link}"}
+    return {"ok": True, "invited": True, "msg": "ユーザーを追加し招待リンクを送信しました"}
 
 
 @app.put("/api/users/{uid}")

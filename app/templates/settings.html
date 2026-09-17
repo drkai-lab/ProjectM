@@ -145,7 +145,19 @@ if (uf) {
   uf.onsubmit = async (e) => {
     e.preventDefault();
     const r = await api('POST', '/api/users', new FormData(uf));
-    toast(r.msg || '追加しました'); setTimeout(()=>location.reload(), 800);
+    toast(r.msg || '追加しました');
+    const oldBox = document.getElementById('inviteLinkBox');
+    if (oldBox) oldBox.remove();
+    if (r.link) {
+      const box = document.createElement('p');
+      box.id = 'inviteLinkBox';
+      box.className = 'hint';
+      box.style.wordBreak = 'break-all';
+      box.textContent = '招待リンク（コピーして本人に渡してください）: ' + r.link;
+      uf.appendChild(box);
+    }
+    if (!r.ok) return;
+    setTimeout(()=>location.reload(), 800);
   };
   document.querySelectorAll('.user-row').forEach(row => {
     const uid = row.dataset.uid;
