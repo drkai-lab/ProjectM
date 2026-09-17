@@ -19,7 +19,7 @@ from slowapi.util import get_remote_address
 
 from . import auth, config, db as dbmod, scheduler, search_engine
 from .i18n import COOKIE_NAME as LANG_COOKIE, SUPPORTED_LANGUAGES, TRANSLATIONS, template_context as i18n_context
-from .models import Keyword, Run, Schedule, Site, User, UserGroup
+from .models import Keyword, Run, Schedule, Site, TelegramTarget, User, UserGroup
 from .scraper_engine import run_scan
 
 app = FastAPI(title="ProjectM")
@@ -342,10 +342,50 @@ def settings_page(request: Request, db: OrmSession = Depends(get_db)):
     is_mgr = role_rank(u.role) >= ROLE_RANK["admin"]
     users = db.query(User).order_by(User.id).all() if is_mgr else []
     groups = db.query(UserGroup).order_by(UserGroup.id).all() if is_mgr else []
+    targets = db.query(TelegramTarget).order_by(TelegramTarget.created_at.desc()).all() if is_mgr else []
     return templates.TemplateResponse(request, "settings.html",
                                       template_context(request, {"u": u, "sched": sched,
                                                                  "users": users, "groups": groups,
+                                                                 "targets": targets,
                                                                  "active_page": "settings"}))
+
+
+# ---------------- Telegram 通知先 (admin以上) ----------------
+CHAT_ID_RE = re.compile(r"^-?\d{6,20}$")
+
+
+@app.post("/api/telegram_targets")
+def add_telegram_target(chat_id: str = Form(...), label: str = Form(""),
+                        db: OrmSession = Depends(get_db), u: User = Depends(require_admin)):
+    chat_id = chat_id.strip()
+    if not CHAT_ID_RE.match(chat_id):
+        raise HTTPException(400, "チャットIDは数字6〜20桁（グループは先頭に -）で入力してください")
+    if db.query(TelegramTarget).filter(TelegramTarget.chat_id == chat_id).first():
+        raise HTTPException(400, "このチャットIDは既に登録済みです")
+    db.add(TelegramTarget(chat_id=chat_id, label=label.strip()))
+    db.commit()
+    return {"ok": True, "msg": "通知先を追加しました"}
+
+
+@app.delete("/api/telegram_targets/{tid}")
+def delete_telegram_target(tid: int, db: OrmSession = Depends(get_db),
+                           u: User = Depends(require_admin)):
+    target = db.get(TelegramTarget, tid)
+    if not target:
+        raise HTTPException(404, "通知先が見つかりません")
+    db.delete(target)
+    db.commit()
+    return {"ok": True, "msg": "通知先を削除しました"}
+
+
+@app.post("/api/telegram_targets/{tid}/test")
+def test_telegram_target(tid: int, db: OrmSession = Depends(get_db),
+                         u: User = Depends(require_admin)):
+    target = db.get(TelegramTarget, tid)
+    if not target:
+        raise HTTPException(404, "通知先が見つかりません")
+    dbmod.telegram_send(str(target.chat_id), "[ProjectM] テスト送信です。この通知先に届いています。")
+    return {"ok": True, "msg": "テスト送信を実行しました"}
 
 
 @app.get("/search", response_class=HTMLResponse)

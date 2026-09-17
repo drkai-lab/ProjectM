@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from . import auth, config
-from .models import Base, Keyword, Schedule, Site, User
+from .models import Base, Keyword, Schedule, Site, TelegramTarget, User
 
 engine = create_engine(config.DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -95,16 +95,40 @@ def _localize_notification(text: str, lang: str):
     return text
 
 
-def telegram_notify(text: str):
-    text = _localize_notification(text, notification_language())
-    full = "[ProjectM] MyGov Monitor\n\n" + text
-    for i in range(0, len(full), 4000):
+def telegram_send(chat_id: str, text: str):
+    """1つの宛先へ送る。4000文字で分割し、失敗しても例外は投げない。"""
+    for i in range(0, len(text), 4000):
         try:
             httpx.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                       data={"chat_id": TELEGRAM_CHAT_ID, "text": full[i:i + 4000]},
+                       data={"chat_id": chat_id, "text": text[i:i + 4000]},
                        timeout=20)
         except Exception as e:
             print(f"[telegram] send failed: {e}")
+
+
+def telegram_target_ids():
+    """有効な通知先を「環境変数→DB」の順で重複なく返す。"""
+    ids = []
+    # 環境変数の宛先は未設定でも従来どおり送信対象に含める(後方互換)
+    ids.append(TELEGRAM_CHAT_ID)
+    db = SessionLocal()
+    try:
+        rows = db.query(TelegramTarget).filter(TelegramTarget.enabled.is_(True)) \
+                 .order_by(TelegramTarget.id).all()
+        for row in rows:
+            if row.chat_id in ids:
+                continue
+            ids.append(str(row.chat_id))
+    finally:
+        db.close()
+    return ids
+
+
+def telegram_notify(text: str):
+    text = _localize_notification(text, notification_language())
+    full = "[ProjectM] MyGov Monitor\n\n" + text
+    for chat_id in telegram_target_ids():
+        telegram_send(chat_id, full)
 
 
 def init_db():

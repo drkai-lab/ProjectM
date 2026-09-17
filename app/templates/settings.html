@@ -118,6 +118,32 @@
     {% endfor %}
   </div>
 </div>
+
+<div class="card">
+  <div class="card-title">{{ t.get('telegram_targets', 'Telegram通知先') }}</div>
+  <p style="color:#666;font-size:12px;margin:0 0 10px">
+    {{ t.get('telegram_targets_hint', '通知は環境変数の宛先と、ここに登録した有効な宛先すべてに送信されます。') }}
+  </p>
+  <form id="targetForm" class="inline-form" style="flex-wrap:wrap">
+    <input name="chat_id" type="text" placeholder="チャットID (例: 6405288844)" required style="flex:1 1 45%">
+    <input name="label" type="text" placeholder="ラベル(任意)" style="flex:1 1 45%">
+    <button class="btn btn-primary">{{ t.add|default('追加') }}</button>
+  </form>
+  <div class="list" id="targetList">
+    {% for tg in targets %}
+    <div class="list-item target-row" data-tid="{{ tg.id }}">
+      <div style="min-width:0">
+        <div class="site-url">{{ tg.label or '（未設定）' }}
+          {% if not tg.enabled %}<span class="badge badge-frozen">無効</span>{% endif %}</div>
+        <div class="site-sub">{{ tg.chat_id }} · {{ tg.created_at.strftime('%Y-%m-%d %H:%M') if tg.created_at else '—' }}</div>
+      </div>
+      <button class="btn-sm target-test">{{ t.get('test_send', 'テスト送信') }}</button>
+      <button class="chip-x target-del" title="通知先を削除">×</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% if not targets %}<p style="color:#666;font-size:12px;margin:0">通知先がありません。</p>{% endif %}
+</div>
 {% endif %}
 
 <form method="post" action="/logout" class="csrf-form"><button type="submit" class="btn btn-block" style="margin-top:8px">{{ t.logout|default('ログアウト') }}</button></form>
@@ -208,6 +234,30 @@ if (gf) {
         location.reload();
       };
     });
+  });
+}
+
+const tf = document.getElementById('targetForm');
+if (tf) {
+  tf.onsubmit = async (e) => {
+    e.preventDefault();
+    await api('POST', '/api/telegram_targets', new FormData(tf));
+    toast('通知先を追加しました');
+    setTimeout(() => location.reload(), 800);
+  };
+  document.querySelectorAll('.target-row').forEach(row => {
+    const tid = row.dataset.tid;
+    const test = row.querySelector('.target-test');
+    if (test) test.onclick = async () => {
+      const r = await api('POST', '/api/telegram_targets/' + tid + '/test');
+      toast(r.msg || 'テスト送信を実行しました');
+    };
+    const del = row.querySelector('.target-del');
+    if (del) del.onclick = async () => {
+      if (!confirm('この通知先を削除しますか?')) return;
+      await api('DELETE', '/api/telegram_targets/' + tid);
+      row.remove(); toast('削除しました');
+    };
   });
 }
 </script>

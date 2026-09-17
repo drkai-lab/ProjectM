@@ -127,3 +127,13 @@ class Session(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=utcnow)
     expires_at = Column(DateTime)
+
+
+class TelegramTarget(Base):
+    """Telegram通知先(管理者がGUIで追加・削除する送信先)。"""
+    __tablename__ = "telegram_targets"
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(String(32), unique=True, nullable=False)
+    label = Column(String(120), default="")
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=utcnow)
